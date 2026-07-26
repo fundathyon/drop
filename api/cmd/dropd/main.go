@@ -62,9 +62,23 @@ func main() {
 	issuer := auth.NewIssuer(keys, cfg.Auth.Issuer, cfg.Auth.AccessTTL, cfg.Auth.RefreshTTL)
 	accounts := auth.NewService(database, issuer, cfg.Auth.InvitationTTL)
 
-	if err := accounts.Bootstrap(ctx, cfg.Auth.AdminEmail, cfg.Auth.AdminPassword); err != nil {
+	admin, err := accounts.Bootstrap(ctx, cfg.Auth.AdminEmail, cfg.Auth.AdminPassword)
+	if err != nil {
 		slog.Error("bootstrap administrator", "error", err)
 		os.Exit(1)
+	}
+
+	// The tree predates ownership on any database written before drives
+	// existed. It is handed to the administrator here, once there is somebody
+	// to hand it to; on every later start this matches nothing.
+	adopted, err := db.AdoptOwnerlessNodes(database, admin.ID)
+	if err != nil {
+		slog.Error("assign owners to existing nodes", "error", err)
+		os.Exit(1)
+	}
+	if adopted > 0 {
+		slog.Warn("existing drops had no owner and now belong to the administrator",
+			"nodes", adopted, "owner", admin.Email)
 	}
 
 	handler, err := httpapi.NewRouter(service.New(database, store, cfg.PublicBaseURL), httpapi.Config{

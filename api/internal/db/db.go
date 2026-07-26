@@ -34,13 +34,52 @@ func Open(dsn string) (*gorm.DB, error) {
 		}
 	}
 
+	// Ownership arrived after the tree did. SQLite refuses a NOT NULL column
+	// without a default on a table that already has rows, so the column is
+	// added here with a placeholder; AdoptOwnerlessNodes replaces it once
+	// there is an administrator to hand the tree to.
+	if g.Migrator().HasTable(&model.Node{}) && !g.Migrator().HasColumn(&model.Node{}, "owner_id") {
+		if err := g.Exec("ALTER TABLE nodes ADD COLUMN owner_id integer NOT NULL DEFAULT 0").Error; err != nil {
+			return nil, fmt.Errorf("add owner column: %w", err)
+		}
+	}
+
 	if err := g.AutoMigrate(
 		&model.Node{}, &model.Version{}, &model.File{},
-		&model.User{}, &model.Session{}, &model.Invitation{},
+		&model.User{}, &model.Session{}, &model.Invitation{}, &model.Share{},
 	); err != nil {
 		return nil, fmt.Errorf("migrate schema: %w", err)
 	}
+
+	// The old schema made a path unique across the whole table. Two people may
+	// now each have a "Proyectos", so that index has to go — AutoMigrate adds
+	// the composite one but never drops what it replaced.
+	//
+	// Safe in either order: paths were globally unique before, so they are
+	// still unique per owner while every row shares the placeholder owner.
+	if err := g.Exec("DROP INDEX IF EXISTS idx_nodes_path").Error; err != nil {
+		return nil, fmt.Errorf("drop legacy path index: %w", err)
+	}
+
 	return g, nil
+}
+
+// AdoptOwnerlessNodes hands the tree from before ownership existed to one user.
+//
+// It runs after the administrator is bootstrapped rather than inside Open,
+// because a database written before there were accounts has nodes and no user
+// to give them to yet. Nodes created from now on always carry their owner, so
+// on any other startup this matches nothing.
+func AdoptOwnerlessNodes(g *gorm.DB, ownerID uint) (int64, error) {
+	if ownerID == 0 {
+		return 0, fmt.Errorf("adopt nodes: no owner given")
+	}
+	result := g.Model(&model.Node{}).Where("owner_id = 0 OR owner_id IS NULL").
+		Update("owner_id", ownerID)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return result.RowsAffected, nil
 }
 
 // upgradeToVersionedDrops moves an existing database onto the versioned schema.

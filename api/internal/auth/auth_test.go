@@ -206,12 +206,12 @@ func TestBootstrapIsIdempotentAndNeverOverwrites(t *testing.T) {
 	ctx := context.Background()
 	svc := testService(t)
 
-	if err := svc.Bootstrap(ctx, "Admin@Drop.Local", "primera"); err != nil {
+	if _, err := svc.Bootstrap(ctx, "Admin@Drop.Local", "primera"); err != nil {
 		t.Fatalf("Bootstrap: %v", err)
 	}
 	// The address is normalized, so case in the environment does not create a
 	// second account on the next start.
-	if err := svc.Bootstrap(ctx, "admin@drop.local", "segunda"); err != nil {
+	if _, err := svc.Bootstrap(ctx, "admin@drop.local", "segunda"); err != nil {
 		t.Fatalf("Bootstrap again: %v", err)
 	}
 
@@ -235,7 +235,7 @@ func TestBootstrapIsIdempotentAndNeverOverwrites(t *testing.T) {
 func TestLoginDoesNotRevealWhoHasAnAccount(t *testing.T) {
 	ctx := context.Background()
 	svc := testService(t)
-	if err := svc.Bootstrap(ctx, "admin@drop.local", "contraseña-larga"); err != nil {
+	if _, err := svc.Bootstrap(ctx, "admin@drop.local", "contraseña-larga"); err != nil {
 		t.Fatalf("Bootstrap: %v", err)
 	}
 
@@ -252,7 +252,7 @@ func TestLoginDoesNotRevealWhoHasAnAccount(t *testing.T) {
 func TestDisablingAUserEndsTheirSessions(t *testing.T) {
 	ctx := context.Background()
 	svc := testService(t)
-	if err := svc.Bootstrap(ctx, "admin@drop.local", "contraseña-larga"); err != nil {
+	if _, err := svc.Bootstrap(ctx, "admin@drop.local", "contraseña-larga"); err != nil {
 		t.Fatalf("Bootstrap: %v", err)
 	}
 
@@ -286,7 +286,7 @@ func TestDisablingAUserEndsTheirSessions(t *testing.T) {
 func TestLogoutRevokesOnlyThatSession(t *testing.T) {
 	ctx := context.Background()
 	svc := testService(t)
-	if err := svc.Bootstrap(ctx, "admin@drop.local", "contraseña-larga"); err != nil {
+	if _, err := svc.Bootstrap(ctx, "admin@drop.local", "contraseña-larga"); err != nil {
 		t.Fatalf("Bootstrap: %v", err)
 	}
 
@@ -402,7 +402,7 @@ func TestReissuingAnInvitationSupersedesTheOldLink(t *testing.T) {
 func TestInvitationValidation(t *testing.T) {
 	ctx := context.Background()
 	svc := testService(t)
-	if err := svc.Bootstrap(ctx, "admin@drop.local", "contraseña-larga"); err != nil {
+	if _, err := svc.Bootstrap(ctx, "admin@drop.local", "contraseña-larga"); err != nil {
 		t.Fatalf("Bootstrap: %v", err)
 	}
 
@@ -430,7 +430,7 @@ func TestInvitationValidation(t *testing.T) {
 func TestTheLastAdministratorCannotBeRemoved(t *testing.T) {
 	ctx := context.Background()
 	svc := testService(t)
-	if err := svc.Bootstrap(ctx, "admin@drop.local", "contraseña-larga"); err != nil {
+	if _, err := svc.Bootstrap(ctx, "admin@drop.local", "contraseña-larga"); err != nil {
 		t.Fatalf("Bootstrap: %v", err)
 	}
 	users, _ := svc.ListUsers(ctx)
@@ -460,7 +460,7 @@ func TestTheLastAdministratorCannotBeRemoved(t *testing.T) {
 func TestAnAdminCannotLockThemselvesOut(t *testing.T) {
 	ctx := context.Background()
 	svc := testService(t)
-	if err := svc.Bootstrap(ctx, "admin@drop.local", "contraseña-larga"); err != nil {
+	if _, err := svc.Bootstrap(ctx, "admin@drop.local", "contraseña-larga"); err != nil {
 		t.Fatalf("Bootstrap: %v", err)
 	}
 	_, token := mustInvite(t, svc, "admin2@drop.local", model.RoleAdmin)
@@ -480,7 +480,7 @@ func TestAnAdminCannotLockThemselvesOut(t *testing.T) {
 func TestDeletedUsersFreeTheirEmail(t *testing.T) {
 	ctx := context.Background()
 	svc := testService(t)
-	if err := svc.Bootstrap(ctx, "admin@drop.local", "contraseña-larga"); err != nil {
+	if _, err := svc.Bootstrap(ctx, "admin@drop.local", "contraseña-larga"); err != nil {
 		t.Fatalf("Bootstrap: %v", err)
 	}
 	users, _ := svc.ListUsers(ctx)

@@ -81,6 +81,9 @@ type Node struct {
 	Name string     `json:"name" example:"arquitectura"`
 	Path string     `json:"path" example:"proyectos/arquitectura"`
 	Kind model.Kind `json:"kind" enums:"folder,drop" example:"drop"`
+	// Owner is whose drive it lives in. A path only identifies a node together
+	// with this, since every user has their own tree.
+	Owner uint `json:"owner" example:"1"`
 }
 
 // DropMeta is a drop's metadata as the API reports it.
@@ -134,10 +137,15 @@ type DropDetail struct {
 	// Its URL answers 404 until a page by that name arrives, or the metadata
 	// is pointed at one that exists.
 	EntrypointMissing bool `json:"entrypoint_missing" example:"false"`
+	// Access is what the caller may do with it: owner, editor or viewer. The
+	// interface hides the actions it does not cover.
+	Access Access `json:"access" enums:"owner,editor,viewer" example:"owner"`
 }
 
 // DropInput carries the fields accepted when creating a drop.
 type DropInput struct {
+	// ParentRef addresses the destination folder; its Owner picks the drive.
+	ParentRef  Ref
 	Parent     string
 	Name       string
 	Title      string
@@ -166,11 +174,145 @@ func objectKey(slug string, seq uint, name string) string {
 	return versionPrefix(slug, seq) + name
 }
 
+// ---------- addressing and access ----------
+
+// Ref addresses a path inside one user's drive. A path alone stopped being an
+// address the moment every user got their own tree: two people may each have a
+// "Proyectos", and they are different folders.
+type Ref struct {
+	// Owner is whose drive the path belongs to. Zero means the caller's own,
+	// which is what nearly every request means.
+	Owner uint
+	Path  string
+}
+
+// Own addresses a path in the caller's own drive.
+func Own(path string) Ref { return Ref{Path: path} }
+
+// In addresses a path in someone else's drive, reached through a share.
+func In(owner uint, path string) Ref { return Ref{Owner: owner, Path: path} }
+
+// drive resolves which tree a reference is about.
+func (r Ref) drive(actor uint) uint {
+	if r.Owner == 0 {
+		return actor
+	}
+	return r.Owner
+}
+
+// Access is the effective level an actor has on a node: what they own, what
+// was shared with them, or nothing.
+type Access string
+
+const (
+	AccessNone   Access = ""
+	AccessViewer Access = Access(model.AccessViewer)
+	AccessEditor Access = Access(model.AccessEditor)
+	AccessOwner  Access = "owner"
+)
+
+// CanRead reports whether the node may be listed, opened and downloaded.
+func (a Access) CanRead() bool { return a != AccessNone }
+
+// CanWrite reports whether its contents may be changed.
+func (a Access) CanWrite() bool { return a == AccessEditor || a == AccessOwner }
+
+// CanShare reports whether access may be handed to someone else. Editors may,
+// so a team does not have to route every request through one person.
+func (a Access) CanShare() bool { return a == AccessEditor || a == AccessOwner }
+
+// ErrForbidden means the caller can see that something exists but may not do
+// this to it. Not being able to see it at all is ErrNotFound: telling someone
+// which paths exist in a drive they have no access to is itself a leak.
+var ErrForbidden = errors.New("not allowed")
+
+// accessTo resolves what an actor may do with a node.
+//
+// Shares are stored on the node they were granted on and apply to everything
+// beneath it, so a grant is found by looking at the node itself and at every
+// ancestor — which, with materialized paths, is a prefix test.
+func (s *Service) accessTo(ctx context.Context, actor uint, node *model.Node) (Access, error) {
+	if node.OwnerID == actor {
+		return AccessOwner, nil
+	}
+
+	type grant struct {
+		Path   string
+		Access string
+	}
+	var grants []grant
+	err := s.db.WithContext(ctx).
+		Table("shares").
+		Select("nodes.path AS path, shares.access AS access").
+		Joins("JOIN nodes ON nodes.id = shares.node_id").
+		Where("shares.user_id = ? AND nodes.owner_id = ?", actor, node.OwnerID).
+		Scan(&grants).Error
+	if err != nil {
+		return AccessNone, err
+	}
+
+	best := AccessNone
+	for _, g := range grants {
+		if node.Path != g.Path && !strings.HasPrefix(node.Path, g.Path+"/") {
+			continue
+		}
+		if Access(g.Access) == AccessEditor {
+			return AccessEditor, nil // nothing beats it short of ownership
+		}
+		best = AccessViewer
+	}
+	return best, nil
+}
+
+// readable resolves a reference and checks the caller may look at it.
+func (s *Service) readable(ctx context.Context, actor uint, ref Ref) (*model.Node, Access, error) {
+	node, err := s.resolve(ctx, actor, ref)
+	if err != nil {
+		return nil, AccessNone, err
+	}
+	level, err := s.accessTo(ctx, actor, node)
+	if err != nil {
+		return nil, AccessNone, err
+	}
+	if !level.CanRead() {
+		// Deliberately indistinguishable from a path that does not exist.
+		return nil, AccessNone, ErrNotFound
+	}
+	return node, level, nil
+}
+
+// writable is readable plus the right to change what is inside.
+func (s *Service) writable(ctx context.Context, actor uint, ref Ref) (*model.Node, Access, error) {
+	node, level, err := s.readable(ctx, actor, ref)
+	if err != nil {
+		return nil, AccessNone, err
+	}
+	if !level.CanWrite() {
+		return nil, level, ErrForbidden
+	}
+	return node, level, nil
+}
+
+// resolve turns a reference into the row it names, without judging access.
+func (s *Service) resolve(ctx context.Context, actor uint, ref Ref) (*model.Node, error) {
+	path, err := cleanPath(ref.Path)
+	if err != nil {
+		return nil, err
+	}
+	if path == "" {
+		// The root of a drive is not a node: there is nothing to own, rename or
+		// delete, so naming it here is a bad address rather than a miss.
+		return nil, ErrInvalidPath
+	}
+	return s.nodeByPath(ctx, ref.drive(actor), path)
+}
+
 // ---------- reads ----------
 
-func (s *Service) nodeByPath(ctx context.Context, path string) (*model.Node, error) {
+func (s *Service) nodeByPath(ctx context.Context, owner uint, path string) (*model.Node, error) {
 	var n model.Node
-	err := s.db.WithContext(ctx).Where("path = ?", path).First(&n).Error
+	err := s.db.WithContext(ctx).
+		Where("owner_id = ? AND path = ?", owner, path).First(&n).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrNotFound
 	}
@@ -180,18 +322,24 @@ func (s *Service) nodeByPath(ctx context.Context, path string) (*model.Node, err
 	return &n, nil
 }
 
-// List returns the folders and drops directly under path ("" is the root).
-func (s *Service) List(ctx context.Context, path string) ([]Node, error) {
-	path, err := cleanPath(path)
+// List returns the folders and drops directly under a reference. An empty path
+// is the root of a drive, which only its owner may list: someone who was given
+// one folder has no business enumerating the rest.
+func (s *Service) List(ctx context.Context, actor uint, ref Ref) ([]Node, error) {
+	path, err := cleanPath(ref.Path)
 	if err != nil {
 		return nil, err
 	}
+	drive := ref.drive(actor)
 
-	query := s.db.WithContext(ctx).Model(&model.Node{})
+	query := s.db.WithContext(ctx).Model(&model.Node{}).Where("owner_id = ?", drive)
 	if path == "" {
+		if drive != actor {
+			return nil, ErrNotFound
+		}
 		query = query.Where("parent_id IS NULL")
 	} else {
-		parent, err := s.nodeByPath(ctx, path)
+		parent, _, err := s.readable(ctx, actor, ref)
 		if err != nil {
 			return nil, err
 		}
@@ -208,22 +356,42 @@ func (s *Service) List(ctx context.Context, path string) ([]Node, error) {
 
 	nodes := make([]Node, 0, len(rows))
 	for _, r := range rows {
-		nodes = append(nodes, Node{Name: r.Name, Path: r.Path, Kind: r.Kind})
+		nodes = append(nodes, Node{Name: r.Name, Path: r.Path, Kind: r.Kind, Owner: r.OwnerID})
 	}
 	return nodes, nil
 }
 
 // GetDrop returns a drop's metadata, the files of its current version, and its
 // publication history.
-func (s *Service) GetDrop(ctx context.Context, path string) (DropDetail, error) {
-	node, err := s.dropByPath(ctx, path)
+func (s *Service) GetDrop(ctx context.Context, actor uint, ref Ref) (DropDetail, error) {
+	node, level, err := s.dropByRef(ctx, actor, ref)
 	if err != nil {
 		return DropDetail{}, err
 	}
-	return s.detail(ctx, node)
+	return s.detail(ctx, node, level)
 }
 
-func (s *Service) dropByPath(ctx context.Context, path string) (*model.Node, error) {
+// dropByRef resolves a reference that has to be a drop, and the caller's access
+// to it.
+func (s *Service) dropByRef(ctx context.Context, actor uint, ref Ref) (*model.Node, Access, error) {
+	path, err := cleanPath(ref.Path)
+	if err != nil {
+		return nil, AccessNone, err
+	}
+	if path == "" {
+		return nil, AccessNone, ErrNotDrop
+	}
+	node, level, err := s.readable(ctx, actor, ref)
+	if err != nil {
+		return nil, AccessNone, err
+	}
+	if node.Kind != model.KindDrop {
+		return nil, AccessNone, ErrNotDrop
+	}
+	return node, level, nil
+}
+
+func (s *Service) dropByPath(ctx context.Context, owner uint, path string) (*model.Node, error) {
 	path, err := cleanPath(path)
 	if err != nil {
 		return nil, err
@@ -231,7 +399,7 @@ func (s *Service) dropByPath(ctx context.Context, path string) (*model.Node, err
 	if path == "" {
 		return nil, ErrNotDrop
 	}
-	node, err := s.nodeByPath(ctx, path)
+	node, err := s.nodeByPath(ctx, owner, path)
 	if err != nil {
 		return nil, err
 	}
@@ -319,15 +487,15 @@ func (s *Service) history(ctx context.Context, node *model.Node) ([]VersionInfo,
 }
 
 // ListVersions returns a drop's publication history, newest first.
-func (s *Service) ListVersions(ctx context.Context, path string) ([]VersionInfo, error) {
-	node, err := s.dropByPath(ctx, path)
+func (s *Service) ListVersions(ctx context.Context, actor uint, ref Ref) ([]VersionInfo, error) {
+	node, _, err := s.dropByRef(ctx, actor, ref)
 	if err != nil {
 		return nil, err
 	}
 	return s.history(ctx, node)
 }
 
-func (s *Service) detail(ctx context.Context, node *model.Node) (DropDetail, error) {
+func (s *Service) detail(ctx context.Context, node *model.Node, level Access) (DropDetail, error) {
 	version, err := s.currentVersion(ctx, node)
 	if err != nil {
 		return DropDetail{}, err
@@ -372,12 +540,13 @@ func (s *Service) detail(ctx context.Context, node *model.Node) (DropDetail, err
 	}
 
 	return DropDetail{
-		Node:              Node{Name: node.Name, Path: node.Path, Kind: node.Kind},
+		Node:              Node{Name: node.Name, Path: node.Path, Kind: node.Kind, Owner: node.OwnerID},
 		URL:               s.publicURL(node.Slug),
 		Meta:              metaOf(node, version),
 		Files:             infos,
 		Versions:          versions,
 		EntrypointMissing: entrypointMissing,
+		Access:            level,
 	}, nil
 }
 
@@ -393,48 +562,75 @@ func metaOf(n *model.Node, v *model.Version) DropMeta {
 	}
 }
 
-// ---------- writes ----------
-
-// resolveParent returns the parent node for a create operation. A nil node
-// means the root.
-func (s *Service) resolveParent(ctx context.Context, parent string) (*model.Node, string, error) {
-	parent, err := cleanPath(parent)
-	if err != nil {
-		return nil, "", err
+// ownerOrEditor names the access a caller must have had to create something
+// in a drive: their own makes them the owner, anyone else's means a share let
+// them write there.
+func ownerOrEditor(actor, owner uint) Access {
+	if actor == owner {
+		return AccessOwner
 	}
-	if parent == "" {
-		return nil, "", nil
-	}
-	node, err := s.nodeByPath(ctx, parent)
-	if err != nil {
-		return nil, "", err
-	}
-	if node.Kind == model.KindDrop {
-		return nil, "", ErrIsDrop
-	}
-	return node, node.Path, nil
+	return AccessEditor
 }
 
-func (s *Service) exists(ctx context.Context, path string) (bool, error) {
+// isSharedRoot reports whether a node is one the actor was granted directly,
+// rather than something inside one.
+func (s *Service) isSharedRoot(ctx context.Context, actor uint, node *model.Node) (bool, error) {
 	var count int64
-	if err := s.db.WithContext(ctx).Model(&model.Node{}).Where("path = ?", path).Count(&count).Error; err != nil {
+	err := s.db.WithContext(ctx).Model(&model.Share{}).
+		Where("node_id = ? AND user_id = ?", node.ID, actor).Count(&count).Error
+	return count > 0, err
+}
+
+// ---------- writes ----------
+
+// resolveParent returns the parent node for a create operation, and the drive
+// the new node will belong to. A nil node means the root of that drive.
+//
+// Creating at the root of somebody else's drive is refused: a share is a way
+// into one folder, not a licence to add things next to it.
+func (s *Service) resolveParent(ctx context.Context, actor uint, ref Ref) (*model.Node, string, uint, error) {
+	parent, err := cleanPath(ref.Path)
+	if err != nil {
+		return nil, "", 0, err
+	}
+	drive := ref.drive(actor)
+	if parent == "" {
+		if drive != actor {
+			return nil, "", 0, ErrNotFound
+		}
+		return nil, "", actor, nil
+	}
+	node, _, err := s.writable(ctx, actor, ref)
+	if err != nil {
+		return nil, "", 0, err
+	}
+	if node.Kind == model.KindDrop {
+		return nil, "", 0, ErrIsDrop
+	}
+	return node, node.Path, node.OwnerID, nil
+}
+
+func (s *Service) exists(ctx context.Context, owner uint, path string) (bool, error) {
+	var count int64
+	if err := s.db.WithContext(ctx).Model(&model.Node{}).
+		Where("owner_id = ? AND path = ?", owner, path).Count(&count).Error; err != nil {
 		return false, err
 	}
 	return count > 0, nil
 }
 
 // CreateFolder creates a plain organizational folder.
-func (s *Service) CreateFolder(ctx context.Context, parent, name string) (Node, error) {
+func (s *Service) CreateFolder(ctx context.Context, actor uint, parent Ref, name string) (Node, error) {
 	if err := validName(name); err != nil {
 		return Node{}, err
 	}
-	parentNode, parentPath, err := s.resolveParent(ctx, parent)
+	parentNode, parentPath, owner, err := s.resolveParent(ctx, actor, parent)
 	if err != nil {
 		return Node{}, err
 	}
 
 	path := joinPath(parentPath, name)
-	taken, err := s.exists(ctx, path)
+	taken, err := s.exists(ctx, owner, path)
 	if err != nil {
 		return Node{}, err
 	}
@@ -442,14 +638,14 @@ func (s *Service) CreateFolder(ctx context.Context, parent, name string) (Node, 
 		return Node{}, ErrExists
 	}
 
-	node := model.Node{Name: name, Path: path, Kind: model.KindFolder}
+	node := model.Node{OwnerID: owner, Name: name, Path: path, Kind: model.KindFolder}
 	if parentNode != nil {
 		node.ParentID = &parentNode.ID
 	}
 	if err := s.db.WithContext(ctx).Create(&node).Error; err != nil {
 		return Node{}, err
 	}
-	return Node{Name: node.Name, Path: node.Path, Kind: node.Kind}, nil
+	return Node{Name: node.Name, Path: node.Path, Kind: node.Kind, Owner: node.OwnerID}, nil
 }
 
 // UploadFile is one file of an upload. Open is called only after every
@@ -464,6 +660,9 @@ type UploadFile struct {
 
 // UploadDropInput publishes a drop and its files in one call.
 type UploadDropInput struct {
+	// Parent addresses the destination folder. Its Owner decides which drive
+	// the drop lands in; zero means the caller's own.
+	ParentRef  Ref
 	Parent     string
 	Name       string
 	Title      string
@@ -480,7 +679,7 @@ type UploadDropInput struct {
 // request fails before any byte is stored; and if a file fails midway, the
 // half-written version is removed and the drop keeps publishing what it did
 // before.
-func (s *Service) UploadDrop(ctx context.Context, in UploadDropInput) (DropDetail, error) {
+func (s *Service) UploadDrop(ctx context.Context, actor uint, in UploadDropInput) (DropDetail, error) {
 	if len(in.Files) == 0 {
 		return DropDetail{}, fmt.Errorf("%w: at least one file is required", ErrInvalidPath)
 	}
@@ -536,7 +735,11 @@ func (s *Service) UploadDrop(ctx context.Context, in UploadDropInput) (DropDetai
 		return DropDetail{}, ErrInvalidVisibility
 	}
 
-	parentNode, parentPath, err := s.resolveParent(ctx, in.Parent)
+	parentRef := in.ParentRef
+	if parentRef.Path == "" {
+		parentRef.Path = in.Parent
+	}
+	parentNode, parentPath, owner, err := s.resolveParent(ctx, actor, parentRef)
 	if err != nil {
 		return DropDetail{}, err
 	}
@@ -544,7 +747,7 @@ func (s *Service) UploadDrop(ctx context.Context, in UploadDropInput) (DropDetai
 
 	// A drop already at this path is republished rather than rejected; a plain
 	// folder there is a genuine collision.
-	node, err := s.nodeByPath(ctx, path)
+	node, err := s.nodeByPath(ctx, owner, path)
 	// A drop this call created has nothing worth keeping if the upload fails —
 	// unlike one that was already publishing something.
 	created := errors.Is(err, ErrNotFound)
@@ -555,6 +758,7 @@ func (s *Service) UploadDrop(ctx context.Context, in UploadDropInput) (DropDetai
 			visibility = model.VisibilityPublic
 		}
 		node = &model.Node{
+			OwnerID:    owner,
 			Name:       in.Name,
 			Path:       path,
 			Kind:       model.KindDrop,
@@ -575,6 +779,13 @@ func (s *Service) UploadDrop(ctx context.Context, in UploadDropInput) (DropDetai
 	case node.Kind != model.KindDrop:
 		return DropDetail{}, ErrExists
 	default:
+		// Republishing rewrites what the drop serves, so it is a write even
+		// though the row already exists.
+		if level, err := s.accessTo(ctx, actor, node); err != nil {
+			return DropDetail{}, err
+		} else if !level.CanWrite() {
+			return DropDetail{}, ErrForbidden
+		}
 		// Republishing carries the new title over. Visibility only changes when
 		// the caller says so: silently reopening a private drop would be a leak.
 		updates := map[string]any{"title": in.Title}
@@ -607,7 +818,7 @@ func (s *Service) UploadDrop(ctx context.Context, in UploadDropInput) (DropDetai
 			}
 			if created {
 				// Nothing was ever published here, so the empty drop goes too.
-				if delErr := s.Delete(ctx, node.Path); delErr != nil {
+				if delErr := s.deleteNode(ctx, node); delErr != nil {
 					return DropDetail{}, fmt.Errorf("%w (rollback also failed: %v)", err, delErr)
 				}
 			}
@@ -618,7 +829,7 @@ func (s *Service) UploadDrop(ctx context.Context, in UploadDropInput) (DropDetai
 	if err := s.publishVersion(ctx, node, version); err != nil {
 		return DropDetail{}, err
 	}
-	return s.detail(ctx, node)
+	return s.detail(ctx, node, ownerOrEditor(actor, node.OwnerID))
 }
 
 // openVersion starts the next snapshot of a drop. It is not published until
@@ -667,10 +878,13 @@ func (s *Service) discardVersion(ctx context.Context, node *model.Node, version 
 
 // ActivateVersion republishes an earlier snapshot. The history is untouched:
 // rolling back only moves which version the drop's URL resolves to.
-func (s *Service) ActivateVersion(ctx context.Context, path string, seq uint) (DropDetail, error) {
-	node, err := s.dropByPath(ctx, path)
+func (s *Service) ActivateVersion(ctx context.Context, actor uint, ref Ref, seq uint) (DropDetail, error) {
+	node, level, err := s.dropByRef(ctx, actor, ref)
 	if err != nil {
 		return DropDetail{}, err
+	}
+	if !level.CanWrite() {
+		return DropDetail{}, ErrForbidden
 	}
 	version, err := s.versionBySeq(ctx, node.ID, seq)
 	if err != nil {
@@ -679,7 +893,7 @@ func (s *Service) ActivateVersion(ctx context.Context, path string, seq uint) (D
 	if err := s.publishVersion(ctx, node, version); err != nil {
 		return DropDetail{}, err
 	}
-	return s.detail(ctx, node)
+	return s.detail(ctx, node, level)
 }
 
 func isHTML(p string) bool {
@@ -737,11 +951,15 @@ func (s *Service) storeUploadedFile(ctx context.Context, node *model.Node, versi
 
 // CreateDrop creates an empty drop: a node carrying metadata, its first
 // version, and the ".drop" descriptor in object storage.
-func (s *Service) CreateDrop(ctx context.Context, in DropInput) (DropDetail, error) {
+func (s *Service) CreateDrop(ctx context.Context, actor uint, in DropInput) (DropDetail, error) {
 	if err := validName(in.Name); err != nil {
 		return DropDetail{}, err
 	}
-	parentNode, parentPath, err := s.resolveParent(ctx, in.Parent)
+	parentRef := in.ParentRef
+	if parentRef.Path == "" {
+		parentRef.Path = in.Parent
+	}
+	parentNode, parentPath, owner, err := s.resolveParent(ctx, actor, parentRef)
 	if err != nil {
 		return DropDetail{}, err
 	}
@@ -760,7 +978,7 @@ func (s *Service) CreateDrop(ctx context.Context, in DropInput) (DropDetail, err
 	}
 
 	path := joinPath(parentPath, in.Name)
-	taken, err := s.exists(ctx, path)
+	taken, err := s.exists(ctx, owner, path)
 	if err != nil {
 		return DropDetail{}, err
 	}
@@ -774,6 +992,7 @@ func (s *Service) CreateDrop(ctx context.Context, in DropInput) (DropDetail, err
 	}
 
 	node := model.Node{
+		OwnerID:    owner,
 		Name:       in.Name,
 		Path:       path,
 		Kind:       model.KindDrop,
@@ -801,16 +1020,19 @@ func (s *Service) CreateDrop(ctx context.Context, in DropInput) (DropDetail, err
 		return DropDetail{}, err
 	}
 
-	return s.detail(ctx, &node)
+	return s.detail(ctx, &node, ownerOrEditor(actor, owner))
 }
 
 // UpdateDropMeta patches a drop's metadata and refreshes its descriptor. Only
 // the current version is affected; sealed ones keep the entrypoint they were
 // published with.
-func (s *Service) UpdateDropMeta(ctx context.Context, path string, patch DropPatch) (DropDetail, error) {
-	node, err := s.dropByPath(ctx, path)
+func (s *Service) UpdateDropMeta(ctx context.Context, actor uint, ref Ref, patch DropPatch) (DropDetail, error) {
+	node, level, err := s.dropByRef(ctx, actor, ref)
 	if err != nil {
 		return DropDetail{}, err
+	}
+	if !level.CanWrite() {
+		return DropDetail{}, ErrForbidden
 	}
 	version, err := s.currentVersion(ctx, node)
 	if err != nil {
@@ -844,27 +1066,38 @@ func (s *Service) UpdateDropMeta(ctx context.Context, path string, patch DropPat
 	if err := s.writeMeta(ctx, node, version); err != nil {
 		return DropDetail{}, err
 	}
-	return s.detail(ctx, node)
+	return s.detail(ctx, node, level)
 }
 
 // Delete removes a folder or drop and everything beneath it, including every
 // version of every drop in the subtree.
-func (s *Service) Delete(ctx context.Context, path string) error {
-	path, err := cleanPath(path)
+func (s *Service) Delete(ctx context.Context, actor uint, ref Ref) error {
+	node, level, err := s.readable(ctx, actor, ref)
 	if err != nil {
 		return err
 	}
-	if path == "" {
-		return ErrInvalidPath
+	if !level.CanWrite() {
+		return ErrForbidden
 	}
-	node, err := s.nodeByPath(ctx, path)
-	if err != nil {
-		return err
+	// An editor works inside what was shared; removing the shared thing itself
+	// is the one act they could not undo and the owner did not ask for.
+	if level != AccessOwner {
+		shared, err := s.isSharedRoot(ctx, actor, node)
+		if err != nil {
+			return err
+		}
+		if shared {
+			return ErrForbidden
+		}
 	}
+	return s.deleteNode(ctx, node)
+}
 
+// deleteNode does the removal itself, once the caller is known to be allowed.
+func (s *Service) deleteNode(ctx context.Context, node *model.Node) error {
 	var subtree []model.Node
 	if err := s.db.WithContext(ctx).
-		Where("path = ? OR path LIKE ?", node.Path, node.Path+"/%").
+		Where("owner_id = ? AND (path = ? OR path LIKE ?)", node.OwnerID, node.Path, node.Path+"/%").
 		Find(&subtree).Error; err != nil {
 		return err
 	}
@@ -879,6 +1112,11 @@ func (s *Service) Delete(ctx context.Context, path string) error {
 			return err
 		}
 		if err := tx.Where("node_id IN ?", ids).Delete(&model.Version{}).Error; err != nil {
+			return err
+		}
+		// Grants on anything that is going away go with it, or they would
+		// keep a removed folder listed in someone's shared section.
+		if err := tx.Where("node_id IN ?", ids).Delete(&model.Share{}).Error; err != nil {
 			return err
 		}
 		return tx.Where("id IN ?", ids).Delete(&model.Node{}).Error
@@ -903,10 +1141,13 @@ func (s *Service) Delete(ctx context.Context, path string) error {
 
 // SaveFile stores a file in the drop's current version, replacing any file of
 // the same name. Earlier versions are never rewritten.
-func (s *Service) SaveFile(ctx context.Context, dropPath, filename string, r io.Reader, size int64, contentType string) (FileInfo, error) {
-	node, err := s.dropByPath(ctx, dropPath)
+func (s *Service) SaveFile(ctx context.Context, actor uint, ref Ref, filename string, r io.Reader, size int64, contentType string) (FileInfo, error) {
+	node, level, err := s.dropByRef(ctx, actor, ref)
 	if err != nil {
 		return FileInfo{}, err
+	}
+	if !level.CanWrite() {
+		return FileInfo{}, ErrForbidden
 	}
 	version, err := s.currentVersion(ctx, node)
 	if err != nil {
@@ -1017,10 +1258,17 @@ func (s *Service) saveFile(ctx context.Context, node *model.Node, version *model
 // OpenFile streams a stored file. The caller closes the reader. The ".drop"
 // descriptor is readable here even though it is not writable: it is part of
 // what the drop stores, so it should be inspectable.
-func (s *Service) OpenFile(ctx context.Context, path string) (io.ReadCloser, FileInfo, error) {
-	node, version, rel, err := s.resolveFileLocation(ctx, path)
+func (s *Service) OpenFile(ctx context.Context, actor uint, ref Ref) (io.ReadCloser, FileInfo, error) {
+	node, version, rel, err := s.resolveFileLocation(ctx, actor, ref)
 	if err != nil {
 		return nil, FileInfo{}, err
+	}
+	level, err := s.accessTo(ctx, actor, node)
+	if err != nil {
+		return nil, FileInfo{}, err
+	}
+	if !level.CanRead() {
+		return nil, FileInfo{}, ErrNotFound
 	}
 
 	if rel == MetaFileName {
@@ -1064,7 +1312,8 @@ func (s *Service) GetDropBySlug(ctx context.Context, slug string) (DropDetail, e
 	if err != nil {
 		return DropDetail{}, err
 	}
-	return s.detail(ctx, node)
+	// Nobody is signed in on a published page, so it carries no access level.
+	return s.detail(ctx, node, AccessNone)
 }
 
 // PublishedVersion describes the snapshot behind a served page: which version
@@ -1088,7 +1337,7 @@ func (s *Service) GetPublishedVersion(ctx context.Context, slug string, seq uint
 	if err != nil {
 		return PublishedVersion{}, err
 	}
-	detail, err := s.detail(ctx, node)
+	detail, err := s.detail(ctx, node, AccessNone)
 	if err != nil {
 		return PublishedVersion{}, err
 	}
@@ -1188,13 +1437,20 @@ func (s *Service) OpenPublicFile(ctx context.Context, slug, relPath string) (io.
 }
 
 // DeleteFile removes one file from a drop's current version.
-func (s *Service) DeleteFile(ctx context.Context, path string) error {
-	node, version, rel, err := s.resolveFileLocation(ctx, path)
+func (s *Service) DeleteFile(ctx context.Context, actor uint, ref Ref) error {
+	node, version, rel, err := s.resolveFileLocation(ctx, actor, ref)
 	if err != nil {
 		return err
 	}
 	if rel == MetaFileName {
 		return ErrNotFound
+	}
+	level, err := s.accessTo(ctx, actor, node)
+	if err != nil {
+		return err
+	}
+	if !level.CanWrite() {
+		return ErrForbidden
 	}
 
 	var file model.File
@@ -1221,8 +1477,9 @@ func (s *Service) DeleteFile(ctx context.Context, path string) error {
 // may sit in subdirectories, the split point is not simply the last "/": it is
 // the longest prefix that is an actual drop node. Drops cannot nest, so at most
 // one prefix can match.
-func (s *Service) resolveFileLocation(ctx context.Context, full string) (*model.Node, *model.Version, string, error) {
-	cleaned, err := cleanPath(full)
+func (s *Service) resolveFileLocation(ctx context.Context, actor uint, ref Ref) (*model.Node, *model.Version, string, error) {
+	owner := ref.drive(actor)
+	cleaned, err := cleanPath(ref.Path)
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -1232,7 +1489,7 @@ func (s *Service) resolveFileLocation(ctx context.Context, full string) (*model.
 	}
 
 	for i := len(segments) - 1; i >= 1; i-- {
-		node, err := s.nodeByPath(ctx, strings.Join(segments[:i], "/"))
+		node, err := s.nodeByPath(ctx, owner, strings.Join(segments[:i], "/"))
 		if errors.Is(err, ErrNotFound) {
 			continue // an intermediate directory inside the drop, not a node
 		}

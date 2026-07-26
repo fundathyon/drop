@@ -32,13 +32,17 @@ func (v Visibility) Valid() bool {
 // Node is a folder or a drop. Both live in one table because the admin tree
 // is navigated uniformly; Kind decides which of the drop-only columns apply.
 type Node struct {
-	ID       uint   `gorm:"primaryKey"`
+	ID uint `gorm:"primaryKey"`
+	// OwnerID is whose drive this belongs to. Every tree is rooted in a user:
+	// there is no shared global namespace, and two people may each have their
+	// own "Proyectos" without colliding.
+	OwnerID  uint   `gorm:"not null;index;uniqueIndex:idx_nodes_owner_path"`
 	ParentID *uint  `gorm:"index"`
 	Name     string `gorm:"not null;size:255"`
-	// Path is the materialized slash-separated path from the root, e.g.
-	// "proyectos/arquitectura". Unique, so it also enforces "no two children
-	// with the same name" without relying on NULL-tolerant composite indexes.
-	Path string `gorm:"not null;uniqueIndex;size:1024"`
+	// Path is the materialized slash-separated path from the owner's root, e.g.
+	// "proyectos/arquitectura". Unique per owner, so it also enforces "no two
+	// children with the same name" without relying on NULL-tolerant indexes.
+	Path string `gorm:"not null;uniqueIndex:idx_nodes_owner_path;size:1024"`
 	Kind Kind   `gorm:"not null;size:16;index"`
 
 	// Drop-only metadata. What the drop *is* lives here; what it *contains*
@@ -54,6 +58,48 @@ type Node struct {
 	UpdatedAt time.Time
 
 	Versions []Version `gorm:"foreignKey:NodeID;constraint:OnDelete:CASCADE"`
+}
+
+// Access is what a share grants. Ownership is not one of these: it is not
+// granted, it is where a node came from.
+type Access string
+
+const (
+	// AccessViewer can open and download, and nothing else.
+	AccessViewer Access = "viewer"
+	// AccessEditor can also upload, edit and delete inside what was shared —
+	// but not delete the shared node itself, which is the one thing an editor
+	// could do by accident that the owner could not undo.
+	AccessEditor Access = "editor"
+)
+
+func (a Access) Valid() bool {
+	switch a {
+	case AccessViewer, AccessEditor:
+		return true
+	default:
+		return false
+	}
+}
+
+// Share grants a user access to a node and everything beneath it.
+//
+// Grants are stored against the node they were made on, not expanded over the
+// subtree: moving or growing a folder must not mean rewriting permissions, and
+// a grant that no longer applies is one row to delete rather than many.
+type Share struct {
+	ID     uint `gorm:"primaryKey"`
+	NodeID uint `gorm:"not null;index;uniqueIndex:idx_shares_node_user"`
+	// UserID is who was granted access. Indexed on its own because "what has
+	// been shared with me" is the query behind a whole section of the admin.
+	UserID uint   `gorm:"not null;index;uniqueIndex:idx_shares_node_user"`
+	Access Access `gorm:"not null;size:16"`
+	// CreatedByID is who granted it. Editors may share too, and this is what
+	// lets them revoke their own grants without touching the owner's.
+	CreatedByID uint `gorm:"index"`
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // Version is one published snapshot of a drop's files. Uploading a drop that

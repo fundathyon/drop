@@ -92,6 +92,10 @@ func uploaded(files []FileInfo) []FileInfo {
 	return out
 }
 
+// testUser is who the tests act as. Ownership is now part of every call, so
+// there is no such thing as an unattributed one.
+const testUser uint = 1
+
 func newTestService(t *testing.T) (*Service, *fakeStore) {
 	t.Helper()
 	database, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
@@ -106,11 +110,11 @@ func TestCreateFolderAndDrop(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newTestService(t)
 
-	if _, err := svc.CreateFolder(ctx, "", "proyectos"); err != nil {
+	if _, err := svc.CreateFolder(ctx, testUser, Own(""), "proyectos"); err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
 
-	nodes, err := svc.List(ctx, "")
+	nodes, err := svc.List(ctx, testUser, Own(""))
 	if err != nil {
 		t.Fatalf("List root: %v", err)
 	}
@@ -118,7 +122,7 @@ func TestCreateFolderAndDrop(t *testing.T) {
 		t.Fatalf("unexpected root listing: %+v", nodes)
 	}
 
-	drop, err := svc.CreateDrop(ctx, DropInput{
+	drop, err := svc.CreateDrop(ctx, testUser, DropInput{
 		Parent: "proyectos", Name: "arquitectura",
 		Title: "Arquitectura", Visibility: model.VisibilityPublic,
 	})
@@ -135,7 +139,7 @@ func TestCreateFolderAndDrop(t *testing.T) {
 		t.Fatalf("expected default entrypoint, got %q", drop.Meta.Entrypoint)
 	}
 
-	children, err := svc.List(ctx, "proyectos")
+	children, err := svc.List(ctx, testUser, Own("proyectos"))
 	if err != nil {
 		t.Fatalf("List proyectos: %v", err)
 	}
@@ -144,17 +148,17 @@ func TestCreateFolderAndDrop(t *testing.T) {
 	}
 
 	// Listing a drop is a category error: it holds files, not child nodes.
-	if _, err := svc.List(ctx, "proyectos/arquitectura"); err != ErrIsDrop {
+	if _, err := svc.List(ctx, testUser, Own("proyectos/arquitectura")); err != ErrIsDrop {
 		t.Fatalf("expected ErrIsDrop, got %v", err)
 	}
 
 	// Nor can a drop hold folders.
-	if _, err := svc.CreateFolder(ctx, "proyectos/arquitectura", "sub"); err != ErrIsDrop {
+	if _, err := svc.CreateFolder(ctx, testUser, Own("proyectos/arquitectura"), "sub"); err != ErrIsDrop {
 		t.Fatalf("expected ErrIsDrop creating inside a drop, got %v", err)
 	}
 
 	// Duplicate names collide.
-	if _, err := svc.CreateFolder(ctx, "", "proyectos"); err != ErrExists {
+	if _, err := svc.CreateFolder(ctx, testUser, Own(""), "proyectos"); err != ErrExists {
 		t.Fatalf("expected ErrExists, got %v", err)
 	}
 }
@@ -163,7 +167,7 @@ func TestDropDescriptorMaterialized(t *testing.T) {
 	ctx := context.Background()
 	svc, store := newTestService(t)
 
-	drop, err := svc.CreateDrop(ctx, DropInput{Name: "site", Title: "Site"})
+	drop, err := svc.CreateDrop(ctx, testUser, DropInput{Name: "site", Title: "Site"})
 	if err != nil {
 		t.Fatalf("CreateDrop: %v", err)
 	}
@@ -190,11 +194,11 @@ func TestDescriptorIsListedAndReadableButNotWritable(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newTestService(t)
 
-	if _, err := svc.CreateDrop(ctx, DropInput{Name: "site", Title: "Site"}); err != nil {
+	if _, err := svc.CreateDrop(ctx, testUser, DropInput{Name: "site", Title: "Site"}); err != nil {
 		t.Fatalf("CreateDrop: %v", err)
 	}
 
-	detail, err := svc.GetDrop(ctx, "site")
+	detail, err := svc.GetDrop(ctx, testUser, Own("site"))
 	if err != nil {
 		t.Fatalf("GetDrop: %v", err)
 	}
@@ -210,7 +214,7 @@ func TestDescriptorIsListedAndReadableButNotWritable(t *testing.T) {
 	}
 
 	// Readable...
-	body, info, err := svc.OpenFile(ctx, "site/"+MetaFileName)
+	body, info, err := svc.OpenFile(ctx, testUser, Own("site/"+MetaFileName))
 	if err != nil {
 		t.Fatalf("OpenFile descriptor: %v", err)
 	}
@@ -224,15 +228,15 @@ func TestDescriptorIsListedAndReadableButNotWritable(t *testing.T) {
 	}
 
 	// ...but never writable or deletable through the file API.
-	if _, err := svc.SaveFile(ctx, "site", MetaFileName, strings.NewReader("x"), 1, "text/plain"); err != ErrInvalidPath {
+	if _, err := svc.SaveFile(ctx, testUser, Own("site"), MetaFileName, strings.NewReader("x"), 1, "text/plain"); err != ErrInvalidPath {
 		t.Errorf("expected ErrInvalidPath overwriting the descriptor, got %v", err)
 	}
-	if err := svc.DeleteFile(ctx, "site/"+MetaFileName); err != ErrNotFound {
+	if err := svc.DeleteFile(ctx, testUser, Own("site/"+MetaFileName)); err != ErrNotFound {
 		t.Errorf("expected ErrNotFound deleting the descriptor, got %v", err)
 	}
 
 	// Deleting it must not have removed it.
-	if detail, err = svc.GetDrop(ctx, "site"); err != nil || len(detail.Files) != 1 {
+	if detail, err = svc.GetDrop(ctx, testUser, Own("site")); err != nil || len(detail.Files) != 1 {
 		t.Fatalf("descriptor should survive: err=%v files=%+v", err, detail.Files)
 	}
 }
@@ -250,7 +254,7 @@ func TestUploadDrop(t *testing.T) {
 	ctx := context.Background()
 	svc, store := newTestService(t)
 
-	detail, err := svc.UploadDrop(ctx, UploadDropInput{
+	detail, err := svc.UploadDrop(ctx, testUser, UploadDropInput{
 		Title: "Arquitectura del sistema",
 		Files: []UploadFile{
 			uploadFile("index.html", "text/html", "<h1>hola</h1>"),
@@ -281,7 +285,7 @@ func TestUploadDrop(t *testing.T) {
 	}
 
 	// The nested file is readable back through its full path.
-	body, _, err := svc.OpenFile(ctx, detail.Path+"/assets/app.css")
+	body, _, err := svc.OpenFile(ctx, testUser, Own(detail.Path+"/assets/app.css"))
 	if err != nil {
 		t.Fatalf("OpenFile nested: %v", err)
 	}
@@ -335,7 +339,7 @@ func TestUploadDropInfersEntrypoint(t *testing.T) {
 			for _, p := range tc.files {
 				files = append(files, uploadFile(p, "text/html", "x"))
 			}
-			detail, err := svc.UploadDrop(ctx, UploadDropInput{Title: "Inferido", Files: files})
+			detail, err := svc.UploadDrop(ctx, testUser, UploadDropInput{Title: "Inferido", Files: files})
 			if err != nil {
 				t.Fatalf("UploadDrop: %v", err)
 			}
@@ -351,7 +355,7 @@ func TestUploadDropAmbiguousEntrypoint(t *testing.T) {
 
 	t.Run("several pages without an index", func(t *testing.T) {
 		svc, _ := newTestService(t)
-		_, err := svc.UploadDrop(ctx, UploadDropInput{
+		_, err := svc.UploadDrop(ctx, testUser, UploadDropInput{
 			Title: "Ambiguo",
 			Files: []UploadFile{
 				uploadFile("about.html", "text/html", "x"),
@@ -368,7 +372,7 @@ func TestUploadDropAmbiguousEntrypoint(t *testing.T) {
 
 	t.Run("no HTML at all", func(t *testing.T) {
 		svc, _ := newTestService(t)
-		_, err := svc.UploadDrop(ctx, UploadDropInput{
+		_, err := svc.UploadDrop(ctx, testUser, UploadDropInput{
 			Title: "Sin HTML",
 			Files: []UploadFile{uploadFile("notas.txt", "text/plain", "x")},
 		})
@@ -382,7 +386,7 @@ func TestOpenPublicFile(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newTestService(t)
 
-	detail, err := svc.UploadDrop(ctx, UploadDropInput{
+	detail, err := svc.UploadDrop(ctx, testUser, UploadDropInput{
 		Title: "Publicado",
 		Files: []UploadFile{
 			uploadFile("pagina.html", "text/html", "<h1>hola</h1>"),
@@ -437,7 +441,7 @@ func TestContentTypeIsInferredWhenNotDeclared(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newTestService(t)
 
-	detail, err := svc.UploadDrop(ctx, UploadDropInput{
+	detail, err := svc.UploadDrop(ctx, testUser, UploadDropInput{
 		Title: "Tipos",
 		Files: []UploadFile{
 			uploadFile("index.html", "", "<h1>x</h1>"),
@@ -473,7 +477,7 @@ func TestUploadingTheSameTitleAgainOpensANewVersion(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newTestService(t)
 
-	first, err := svc.UploadDrop(ctx, UploadDropInput{
+	first, err := svc.UploadDrop(ctx, testUser, UploadDropInput{
 		Title: "Landing",
 		Files: []UploadFile{
 			uploadFile("index.html", "text/html", "<h1>uno</h1>"),
@@ -489,7 +493,7 @@ func TestUploadingTheSameTitleAgainOpensANewVersion(t *testing.T) {
 	slug := first.Meta.Slug
 
 	// The same title lands on the same drop instead of colliding.
-	second, err := svc.UploadDrop(ctx, UploadDropInput{
+	second, err := svc.UploadDrop(ctx, testUser, UploadDropInput{
 		Title: "Landing",
 		Files: []UploadFile{uploadFile("index.html", "text/html", "<h1>dos</h1>")},
 	})
@@ -552,7 +556,7 @@ func TestEditingFilesDoesNotOpenANewVersion(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newTestService(t)
 
-	detail, err := svc.UploadDrop(ctx, UploadDropInput{
+	detail, err := svc.UploadDrop(ctx, testUser, UploadDropInput{
 		Title: "Editable",
 		Files: []UploadFile{uploadFile("index.html", "text/html", "<h1>uno</h1>")},
 	})
@@ -562,15 +566,15 @@ func TestEditingFilesDoesNotOpenANewVersion(t *testing.T) {
 
 	// Versions are cut by uploads, not by edits: saving a file in the admin
 	// changes what version 1 contains rather than publishing a version 2.
-	if _, err := svc.SaveFile(ctx, detail.Path, "index.html", strings.NewReader("<h1>dos</h1>"), 12, "text/html"); err != nil {
+	if _, err := svc.SaveFile(ctx, testUser, Own(detail.Path), "index.html", strings.NewReader("<h1>dos</h1>"), 12, "text/html"); err != nil {
 		t.Fatalf("SaveFile: %v", err)
 	}
 	title := "Otro título"
-	if _, err := svc.UpdateDropMeta(ctx, detail.Path, DropPatch{Title: &title}); err != nil {
+	if _, err := svc.UpdateDropMeta(ctx, testUser, Own(detail.Path), DropPatch{Title: &title}); err != nil {
 		t.Fatalf("UpdateDropMeta: %v", err)
 	}
 
-	detail, err = svc.GetDrop(ctx, detail.Path)
+	detail, err = svc.GetDrop(ctx, testUser, Own(detail.Path))
 	if err != nil {
 		t.Fatalf("GetDrop: %v", err)
 	}
@@ -583,21 +587,21 @@ func TestActivateVersionRollsBackWithoutLosingHistory(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newTestService(t)
 
-	first, err := svc.UploadDrop(ctx, UploadDropInput{
+	first, err := svc.UploadDrop(ctx, testUser, UploadDropInput{
 		Title: "Rollback",
 		Files: []UploadFile{uploadFile("index.html", "text/html", "<h1>uno</h1>")},
 	})
 	if err != nil {
 		t.Fatalf("UploadDrop: %v", err)
 	}
-	if _, err := svc.UploadDrop(ctx, UploadDropInput{
+	if _, err := svc.UploadDrop(ctx, testUser, UploadDropInput{
 		Title: "Rollback",
 		Files: []UploadFile{uploadFile("index.html", "text/html", "<h1>dos</h1>")},
 	}); err != nil {
 		t.Fatalf("second UploadDrop: %v", err)
 	}
 
-	detail, err := svc.ActivateVersion(ctx, first.Path, 1)
+	detail, err := svc.ActivateVersion(ctx, testUser, Own(first.Path), 1)
 	if err != nil {
 		t.Fatalf("ActivateVersion: %v", err)
 	}
@@ -626,7 +630,7 @@ func TestActivateVersionRollsBackWithoutLosingHistory(t *testing.T) {
 	}
 	body.Close()
 
-	if _, err := svc.ActivateVersion(ctx, first.Path, 9); !errors.Is(err, ErrNotFound) {
+	if _, err := svc.ActivateVersion(ctx, testUser, Own(first.Path), 9); !errors.Is(err, ErrNotFound) {
 		t.Errorf("expected ErrNotFound activating an unknown version, got %v", err)
 	}
 }
@@ -635,11 +639,11 @@ func TestUploadingOntoAPlainFolderStillCollides(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newTestService(t)
 
-	if _, err := svc.CreateFolder(ctx, "", "informes"); err != nil {
+	if _, err := svc.CreateFolder(ctx, testUser, Own(""), "informes"); err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
 	// Versioning applies to drops. A folder of the same name is a real clash.
-	_, err := svc.UploadDrop(ctx, UploadDropInput{
+	_, err := svc.UploadDrop(ctx, testUser, UploadDropInput{
 		Title: "Informes",
 		Name:  "informes",
 		Files: []UploadFile{uploadFile("index.html", "text/html", "x")},
@@ -653,7 +657,7 @@ func TestRepublishingKeepsVisibilityUnlessAsked(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newTestService(t)
 
-	first, err := svc.UploadDrop(ctx, UploadDropInput{
+	first, err := svc.UploadDrop(ctx, testUser, UploadDropInput{
 		Title:      "Privado",
 		Visibility: model.VisibilityPrivate,
 		Files:      []UploadFile{uploadFile("index.html", "text/html", "secreto")},
@@ -664,7 +668,7 @@ func TestRepublishingKeepsVisibilityUnlessAsked(t *testing.T) {
 
 	// An upload that says nothing about visibility must not publish a private
 	// drop to the world.
-	second, err := svc.UploadDrop(ctx, UploadDropInput{
+	second, err := svc.UploadDrop(ctx, testUser, UploadDropInput{
 		Title: "Privado",
 		Files: []UploadFile{uploadFile("index.html", "text/html", "sigue siendo secreto")},
 	})
@@ -679,7 +683,7 @@ func TestRepublishingKeepsVisibilityUnlessAsked(t *testing.T) {
 	}
 
 	// Asking explicitly does change it.
-	third, err := svc.UploadDrop(ctx, UploadDropInput{
+	third, err := svc.UploadDrop(ctx, testUser, UploadDropInput{
 		Title:      "Privado",
 		Visibility: model.VisibilityPublic,
 		Files:      []UploadFile{uploadFile("index.html", "text/html", "ya público")},
@@ -696,7 +700,7 @@ func TestDescriptorSizeMatchesItsBytes(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newTestService(t)
 
-	detail, err := svc.UploadDrop(ctx, UploadDropInput{
+	detail, err := svc.UploadDrop(ctx, testUser, UploadDropInput{
 		Title: "Descriptor",
 		Files: []UploadFile{
 			uploadFile("index.html", "text/html", "<h1>hola</h1>"),
@@ -720,7 +724,7 @@ func TestDescriptorSizeMatchesItsBytes(t *testing.T) {
 		t.Fatal("the descriptor should be listed")
 	}
 
-	body, info, err := svc.OpenFile(ctx, detail.Path+"/"+MetaFileName)
+	body, info, err := svc.OpenFile(ctx, testUser, Own(detail.Path+"/"+MetaFileName))
 	if err != nil {
 		t.Fatalf("OpenFile descriptor: %v", err)
 	}
@@ -747,7 +751,7 @@ func TestOpenPublicFileHidesPrivateDrops(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newTestService(t)
 
-	detail, err := svc.UploadDrop(ctx, UploadDropInput{
+	detail, err := svc.UploadDrop(ctx, testUser, UploadDropInput{
 		Title:      "Privado",
 		Visibility: model.VisibilityPrivate,
 		Files:      []UploadFile{uploadFile("index.html", "text/html", "secreto")},
@@ -763,7 +767,7 @@ func TestOpenPublicFileHidesPrivateDrops(t *testing.T) {
 
 	// Publishing it makes it reachable without re-uploading anything.
 	visibility := model.VisibilityPublic
-	if _, err := svc.UpdateDropMeta(ctx, detail.Path, DropPatch{Visibility: &visibility}); err != nil {
+	if _, err := svc.UpdateDropMeta(ctx, testUser, Own(detail.Path), DropPatch{Visibility: &visibility}); err != nil {
 		t.Fatalf("UpdateDropMeta: %v", err)
 	}
 	body, _, err := svc.OpenPublicFile(ctx, detail.Meta.Slug, "")
@@ -840,14 +844,14 @@ func TestUploadDropValidation(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := svc.UploadDrop(ctx, tc.input); !errors.Is(err, tc.want) {
+			if _, err := svc.UploadDrop(ctx, testUser, tc.input); !errors.Is(err, tc.want) {
 				t.Fatalf("expected %v, got %v", tc.want, err)
 			}
 		})
 	}
 
 	// None of the rejected requests may have left a node behind.
-	nodes, err := svc.List(ctx, "")
+	nodes, err := svc.List(ctx, testUser, Own(""))
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -863,7 +867,7 @@ func TestUploadDropRollsBackOnStorageFailure(t *testing.T) {
 	// Fail the second file, after the drop and the first file already exist.
 	store.failOn = "second.css"
 
-	_, err := svc.UploadDrop(ctx, UploadDropInput{
+	_, err := svc.UploadDrop(ctx, testUser, UploadDropInput{
 		Title: "Fallo a media subida",
 		Files: []UploadFile{
 			uploadFile("index.html", "text/html", "<h1>ok</h1>"),
@@ -874,7 +878,7 @@ func TestUploadDropRollsBackOnStorageFailure(t *testing.T) {
 		t.Fatal("expected the upload to fail")
 	}
 
-	nodes, err := svc.List(ctx, "")
+	nodes, err := svc.List(ctx, testUser, Own(""))
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -890,7 +894,7 @@ func TestAFailedRepublishLeavesThePublishedVersionAlone(t *testing.T) {
 	ctx := context.Background()
 	svc, store := newTestService(t)
 
-	first, err := svc.UploadDrop(ctx, UploadDropInput{
+	first, err := svc.UploadDrop(ctx, testUser, UploadDropInput{
 		Title: "Estable",
 		Files: []UploadFile{uploadFile("index.html", "text/html", "<h1>publicado</h1>")},
 	})
@@ -900,7 +904,7 @@ func TestAFailedRepublishLeavesThePublishedVersionAlone(t *testing.T) {
 
 	// Fail the second file of the new version, once the first already landed.
 	store.failOn = "roto.css"
-	if _, err := svc.UploadDrop(ctx, UploadDropInput{
+	if _, err := svc.UploadDrop(ctx, testUser, UploadDropInput{
 		Title: "Estable",
 		Files: []UploadFile{
 			uploadFile("index.html", "text/html", "<h1>a medias</h1>"),
@@ -913,7 +917,7 @@ func TestAFailedRepublishLeavesThePublishedVersionAlone(t *testing.T) {
 
 	// The drop keeps serving what it was serving, and the half-written version
 	// left nothing behind — neither a row nor an object.
-	detail, err := svc.GetDrop(ctx, first.Path)
+	detail, err := svc.GetDrop(ctx, testUser, Own(first.Path))
 	if err != nil {
 		t.Fatalf("GetDrop: %v", err)
 	}
@@ -943,13 +947,13 @@ func TestPathTraversalRejected(t *testing.T) {
 	svc, _ := newTestService(t)
 
 	for _, parent := range []string{"../etc", "a/../../b", "/etc/passwd", "a/../..", "..", "a/./../.."} {
-		if _, err := svc.CreateFolder(ctx, parent, "x"); err != ErrInvalidPath {
+		if _, err := svc.CreateFolder(ctx, testUser, Own(parent), "x"); err != ErrInvalidPath {
 			t.Errorf("parent=%q: expected ErrInvalidPath, got %v", parent, err)
 		}
 	}
 
 	for _, name := range []string{"..", ".", "a/b", ".drop", "", "a\\b"} {
-		if _, err := svc.CreateFolder(ctx, "", name); err != ErrInvalidPath {
+		if _, err := svc.CreateFolder(ctx, testUser, Own(""), name); err != ErrInvalidPath {
 			t.Errorf("name=%q: expected ErrInvalidPath, got %v", name, err)
 		}
 	}
@@ -959,12 +963,12 @@ func TestUploadDownloadAndDeleteFile(t *testing.T) {
 	ctx := context.Background()
 	svc, store := newTestService(t)
 
-	if _, err := svc.CreateDrop(ctx, DropInput{Name: "site"}); err != nil {
+	if _, err := svc.CreateDrop(ctx, testUser, DropInput{Name: "site"}); err != nil {
 		t.Fatalf("CreateDrop: %v", err)
 	}
 
 	const content = "<h1>hola</h1>"
-	info, err := svc.SaveFile(ctx, "site", "index.html", strings.NewReader(content), int64(len(content)), "text/html")
+	info, err := svc.SaveFile(ctx, testUser, Own("site"), "index.html", strings.NewReader(content), int64(len(content)), "text/html")
 	if err != nil {
 		t.Fatalf("SaveFile: %v", err)
 	}
@@ -972,7 +976,7 @@ func TestUploadDownloadAndDeleteFile(t *testing.T) {
 		t.Fatalf("unexpected file info: %+v", info)
 	}
 
-	detail, err := svc.GetDrop(ctx, "site")
+	detail, err := svc.GetDrop(ctx, testUser, Own("site"))
 	if err != nil {
 		t.Fatalf("GetDrop: %v", err)
 	}
@@ -980,7 +984,7 @@ func TestUploadDownloadAndDeleteFile(t *testing.T) {
 		t.Fatalf("unexpected files: %+v", detail.Files)
 	}
 
-	body, _, err := svc.OpenFile(ctx, "site/index.html")
+	body, _, err := svc.OpenFile(ctx, testUser, Own("site/index.html"))
 	if err != nil {
 		t.Fatalf("OpenFile: %v", err)
 	}
@@ -991,16 +995,16 @@ func TestUploadDownloadAndDeleteFile(t *testing.T) {
 	}
 
 	// The reserved descriptor name cannot be overwritten through the file API.
-	if _, err := svc.SaveFile(ctx, "site", MetaFileName, strings.NewReader("x"), 1, "text/plain"); err != ErrInvalidPath {
+	if _, err := svc.SaveFile(ctx, testUser, Own("site"), MetaFileName, strings.NewReader("x"), 1, "text/plain"); err != ErrInvalidPath {
 		t.Fatalf("expected ErrInvalidPath writing %s, got %v", MetaFileName, err)
 	}
 
 	// Re-uploading the same name replaces rather than duplicating.
 	const updated = "<h1>hola de nuevo</h1>"
-	if _, err := svc.SaveFile(ctx, "site", "index.html", strings.NewReader(updated), int64(len(updated)), "text/html"); err != nil {
+	if _, err := svc.SaveFile(ctx, testUser, Own("site"), "index.html", strings.NewReader(updated), int64(len(updated)), "text/html"); err != nil {
 		t.Fatalf("SaveFile replace: %v", err)
 	}
-	detail, err = svc.GetDrop(ctx, "site")
+	detail, err = svc.GetDrop(ctx, testUser, Own("site"))
 	if err != nil {
 		t.Fatalf("GetDrop: %v", err)
 	}
@@ -1008,10 +1012,10 @@ func TestUploadDownloadAndDeleteFile(t *testing.T) {
 		t.Fatalf("expected the file to be replaced, got %+v", detail.Files)
 	}
 
-	if err := svc.DeleteFile(ctx, "site/index.html"); err != nil {
+	if err := svc.DeleteFile(ctx, testUser, Own("site/index.html")); err != nil {
 		t.Fatalf("DeleteFile: %v", err)
 	}
-	detail, err = svc.GetDrop(ctx, "site")
+	detail, err = svc.GetDrop(ctx, testUser, Own("site"))
 	if err != nil {
 		t.Fatalf("GetDrop: %v", err)
 	}
@@ -1029,13 +1033,13 @@ func TestUpdateDropMeta(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newTestService(t)
 
-	if _, err := svc.CreateDrop(ctx, DropInput{Name: "site", Title: "Site"}); err != nil {
+	if _, err := svc.CreateDrop(ctx, testUser, DropInput{Name: "site", Title: "Site"}); err != nil {
 		t.Fatalf("CreateDrop: %v", err)
 	}
 
 	title := "Nuevo título"
 	visibility := model.VisibilityPublic
-	detail, err := svc.UpdateDropMeta(ctx, "site", DropPatch{Title: &title, Visibility: &visibility})
+	detail, err := svc.UpdateDropMeta(ctx, testUser, Own("site"), DropPatch{Title: &title, Visibility: &visibility})
 	if err != nil {
 		t.Fatalf("UpdateDropMeta: %v", err)
 	}
@@ -1044,7 +1048,7 @@ func TestUpdateDropMeta(t *testing.T) {
 	}
 
 	bogus := model.Visibility("banana")
-	if _, err := svc.UpdateDropMeta(ctx, "site", DropPatch{Visibility: &bogus}); err == nil {
+	if _, err := svc.UpdateDropMeta(ctx, testUser, Own("site"), DropPatch{Visibility: &bogus}); err == nil {
 		t.Fatal("expected an error for an invalid visibility")
 	}
 }
@@ -1053,21 +1057,21 @@ func TestDeleteRecursiveRemovesObjects(t *testing.T) {
 	ctx := context.Background()
 	svc, store := newTestService(t)
 
-	if _, err := svc.CreateFolder(ctx, "", "proyectos"); err != nil {
+	if _, err := svc.CreateFolder(ctx, testUser, Own(""), "proyectos"); err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
-	if _, err := svc.CreateDrop(ctx, DropInput{Parent: "proyectos", Name: "site"}); err != nil {
+	if _, err := svc.CreateDrop(ctx, testUser, DropInput{Parent: "proyectos", Name: "site"}); err != nil {
 		t.Fatalf("CreateDrop: %v", err)
 	}
-	if _, err := svc.SaveFile(ctx, "proyectos/site", "a.html", strings.NewReader("a"), 1, "text/html"); err != nil {
+	if _, err := svc.SaveFile(ctx, testUser, Own("proyectos/site"), "a.html", strings.NewReader("a"), 1, "text/html"); err != nil {
 		t.Fatalf("SaveFile: %v", err)
 	}
 
-	if err := svc.Delete(ctx, "proyectos"); err != nil {
+	if err := svc.Delete(ctx, testUser, Own("proyectos")); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 
-	nodes, err := svc.List(ctx, "")
+	nodes, err := svc.List(ctx, testUser, Own(""))
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -1078,7 +1082,7 @@ func TestDeleteRecursiveRemovesObjects(t *testing.T) {
 		t.Fatalf("expected storage to be cleaned, got %v", keys)
 	}
 
-	if err := svc.Delete(ctx, ""); err != ErrInvalidPath {
+	if err := svc.Delete(ctx, testUser, Own("")); err != ErrInvalidPath {
 		t.Fatalf("expected ErrInvalidPath deleting the root, got %v", err)
 	}
 }
@@ -1090,7 +1094,7 @@ func TestUploadingAPageAdoptsItAsTheEntrypoint(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newTestService(t)
 
-	drop, err := svc.CreateDrop(ctx, DropInput{Name: "ejemplo", Title: "Ejemplo"})
+	drop, err := svc.CreateDrop(ctx, testUser, DropInput{Name: "ejemplo", Title: "Ejemplo"})
 	if err != nil {
 		t.Fatalf("CreateDrop: %v", err)
 	}
@@ -1101,12 +1105,12 @@ func TestUploadingAPageAdoptsItAsTheEntrypoint(t *testing.T) {
 		t.Fatal("a drop with no files cannot resolve its entrypoint")
 	}
 
-	if _, err := svc.SaveFile(ctx, drop.Path, "tablero.html",
+	if _, err := svc.SaveFile(ctx, testUser, Own(drop.Path), "tablero.html",
 		strings.NewReader("<h1>hola</h1>"), 13, "text/html"); err != nil {
 		t.Fatalf("SaveFile: %v", err)
 	}
 
-	after, err := svc.GetDrop(ctx, drop.Path)
+	after, err := svc.GetDrop(ctx, testUser, Own(drop.Path))
 	if err != nil {
 		t.Fatalf("GetDrop: %v", err)
 	}
@@ -1123,7 +1127,7 @@ func TestAnEntrypointThatResolvesIsNeverOverridden(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newTestService(t)
 
-	drop, err := svc.UploadDrop(ctx, UploadDropInput{
+	drop, err := svc.UploadDrop(ctx, testUser, UploadDropInput{
 		Title: "Sitio",
 		Files: []UploadFile{uploadFile("index.html", "text/html", "<h1>uno</h1>")},
 	})
@@ -1132,12 +1136,12 @@ func TestAnEntrypointThatResolvesIsNeverOverridden(t *testing.T) {
 	}
 
 	// Adding a second page must not move the drop off the one it opens.
-	if _, err := svc.SaveFile(ctx, drop.Path, "otra.html",
+	if _, err := svc.SaveFile(ctx, testUser, Own(drop.Path), "otra.html",
 		strings.NewReader("<h1>dos</h1>"), 12, "text/html"); err != nil {
 		t.Fatalf("SaveFile: %v", err)
 	}
 
-	after, err := svc.GetDrop(ctx, drop.Path)
+	after, err := svc.GetDrop(ctx, testUser, Own(drop.Path))
 	if err != nil {
 		t.Fatalf("GetDrop: %v", err)
 	}
@@ -1152,18 +1156,18 @@ func TestAnAmbiguousUploadLeavesTheEntrypointAlone(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newTestService(t)
 
-	drop, err := svc.CreateDrop(ctx, DropInput{Name: "ejemplo", Title: "Ejemplo"})
+	drop, err := svc.CreateDrop(ctx, testUser, DropInput{Name: "ejemplo", Title: "Ejemplo"})
 	if err != nil {
 		t.Fatalf("CreateDrop: %v", err)
 	}
 	for _, name := range []string{"una.html", "otra.html"} {
-		if _, err := svc.SaveFile(ctx, drop.Path, name,
+		if _, err := svc.SaveFile(ctx, testUser, Own(drop.Path), name,
 			strings.NewReader("<h1>x</h1>"), 10, "text/html"); err != nil {
 			t.Fatalf("SaveFile(%s): %v", name, err)
 		}
 	}
 
-	after, err := svc.GetDrop(ctx, drop.Path)
+	after, err := svc.GetDrop(ctx, testUser, Own(drop.Path))
 	if err != nil {
 		t.Fatalf("GetDrop: %v", err)
 	}

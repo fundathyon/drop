@@ -123,25 +123,25 @@ func invitationInfo(i *model.Invitation, now time.Time) InvitationInfo {
 // configured credentials when the table has none, and leaves any existing
 // account exactly as it is — including its password, which may well have been
 // changed away from the configured default on purpose.
-func (s *Service) Bootstrap(ctx context.Context, email, password string) error {
+func (s *Service) Bootstrap(ctx context.Context, email, password string) (UserInfo, error) {
 	email = normalizeEmail(email)
 	if email == "" || password == "" {
-		return fmt.Errorf("%w: ADMIN_EMAIL and ADMIN_PASSWORD are required", ErrInvalidInput)
+		return UserInfo{}, fmt.Errorf("%w: ADMIN_EMAIL and ADMIN_PASSWORD are required", ErrInvalidInput)
 	}
 
 	var existing model.User
 	err := s.db.WithContext(ctx).Where("email = ?", email).First(&existing).Error
 	if err == nil {
 		slog.Info("administrator already exists", "email", email)
-		return nil
+		return userInfo(&existing), nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
+		return UserInfo{}, err
 	}
 
 	hash, err := HashPassword(password)
 	if err != nil {
-		return err
+		return UserInfo{}, err
 	}
 	admin := model.User{
 		Email:        email,
@@ -151,12 +151,12 @@ func (s *Service) Bootstrap(ctx context.Context, email, password string) error {
 		Active:       true,
 	}
 	if err := s.db.WithContext(ctx).Create(&admin).Error; err != nil {
-		return err
+		return UserInfo{}, err
 	}
 
 	slog.Warn("created the bootstrap administrator; change this password",
 		"email", email)
-	return nil
+	return userInfo(&admin), nil
 }
 
 // ---------- sessions ----------
