@@ -1,0 +1,574 @@
+basePath: /
+definitions:
+  drop_internal_model.Kind:
+    enum:
+    - folder
+    - drop
+    type: string
+    x-enum-varnames:
+    - KindFolder
+    - KindDrop
+  drop_internal_model.Visibility:
+    enum:
+    - public
+    - unlisted
+    - private
+    type: string
+    x-enum-varnames:
+    - VisibilityPublic
+    - VisibilityUnlisted
+    - VisibilityPrivate
+  drop_internal_service.DropDetail:
+    properties:
+      files:
+        items:
+          $ref: '#/definitions/drop_internal_service.FileInfo'
+        type: array
+      kind:
+        allOf:
+        - $ref: '#/definitions/drop_internal_model.Kind'
+        enum:
+        - folder
+        - drop
+        example: drop
+      meta:
+        $ref: '#/definitions/drop_internal_service.DropMeta'
+      name:
+        example: arquitectura
+        type: string
+      path:
+        example: proyectos/arquitectura
+        type: string
+    type: object
+  drop_internal_service.DropMeta:
+    properties:
+      created_at:
+        type: string
+      entrypoint:
+        example: index.html
+        type: string
+      slug:
+        example: An1UHNyp
+        type: string
+      title:
+        example: Arquitectura del sistema
+        type: string
+      updated_at:
+        type: string
+      visibility:
+        allOf:
+        - $ref: '#/definitions/drop_internal_model.Visibility'
+        enum:
+        - public
+        - unlisted
+        - private
+        example: public
+    type: object
+  drop_internal_service.FileInfo:
+    properties:
+      content_type:
+        example: text/html
+        type: string
+      generated:
+        description: |-
+          Generated marks a file the system maintains — the ".drop" descriptor.
+          It can be listed and read, but not written or deleted through the API.
+        example: false
+        type: boolean
+      modified_at:
+        type: string
+      name:
+        example: index.html
+        type: string
+      size:
+        example: 1024
+        type: integer
+    type: object
+  drop_internal_service.Node:
+    properties:
+      kind:
+        allOf:
+        - $ref: '#/definitions/drop_internal_model.Kind'
+        enum:
+        - folder
+        - drop
+        example: drop
+      name:
+        example: arquitectura
+        type: string
+      path:
+        example: proyectos/arquitectura
+        type: string
+    type: object
+  internal_httpapi.CreateDropRequest:
+    properties:
+      entrypoint:
+        example: index.html
+        type: string
+      name:
+        example: arquitectura
+        type: string
+      parent:
+        example: proyectos
+        type: string
+      title:
+        example: Arquitectura del sistema
+        type: string
+      visibility:
+        allOf:
+        - $ref: '#/definitions/drop_internal_model.Visibility'
+        enum:
+        - public
+        - unlisted
+        - private
+        example: public
+    required:
+    - name
+    type: object
+  internal_httpapi.CreateFolderRequest:
+    properties:
+      name:
+        example: clientes
+        type: string
+      parent:
+        example: proyectos
+        type: string
+    required:
+    - name
+    type: object
+  internal_httpapi.ErrorResponse:
+    properties:
+      code:
+        example: not_found
+        type: string
+      message:
+        example: resource not found
+        type: string
+    type: object
+  internal_httpapi.HealthResponse:
+    properties:
+      status:
+        example: ok
+        type: string
+    type: object
+  internal_httpapi.ListResponse:
+    properties:
+      children:
+        items:
+          $ref: '#/definitions/drop_internal_service.Node'
+        type: array
+      path:
+        example: proyectos
+        type: string
+    type: object
+  internal_httpapi.PatchDropRequest:
+    properties:
+      entrypoint:
+        example: index.html
+        type: string
+      title:
+        example: Arquitectura v2
+        type: string
+      visibility:
+        allOf:
+        - $ref: '#/definitions/drop_internal_model.Visibility'
+        enum:
+        - public
+        - unlisted
+        - private
+        example: unlisted
+    type: object
+  internal_httpapi.UploadResponse:
+    properties:
+      files:
+        items:
+          $ref: '#/definitions/drop_internal_service.FileInfo'
+        type: array
+    type: object
+info:
+  contact: {}
+  description: 'Admin API for Drop: a Drive-like tree where any folder holding a `.drop`
+    descriptor is a publishable drop. Metadata lives in SQL; file bytes live in MinIO.'
+  title: Drop Admin API
+  version: "1.0"
+paths:
+  /healthz:
+    get:
+      description: Returns ok when the API process is up.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_httpapi.HealthResponse'
+      summary: Liveness probe
+      tags:
+      - operation
+  /v1/drops:
+    get:
+      description: Returns a drop's metadata and the files it is composed of.
+      parameters:
+      - description: Drop path
+        example: proyectos/arquitectura
+        in: query
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/drop_internal_service.DropDetail'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      summary: Get a drop
+      tags:
+      - drops
+    patch:
+      consumes:
+      - application/json
+      description: Patches title, visibility, or entrypoint and refreshes the drop's
+        `.drop` descriptor.
+      parameters:
+      - description: Drop path
+        example: proyectos/arquitectura
+        in: query
+        name: path
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_httpapi.PatchDropRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/drop_internal_service.DropDetail'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      summary: Update drop metadata
+      tags:
+      - drops
+    post:
+      consumes:
+      - application/json
+      description: 'Creates a drop: a node carrying metadata plus a materialized `.drop`
+        YAML descriptor in object storage.'
+      parameters:
+      - description: Drop to create
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_httpapi.CreateDropRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/drop_internal_service.DropDetail'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      summary: Create a drop
+      tags:
+      - drops
+  /v1/drops/upload:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Creates a drop and uploads its files in a single multipart request.
+        Repeat the `file` field once per file. To place files in subdirectories, repeat
+        a `path` field as well — the Nth `path` names the Nth `file` — because RFC
+        7578 forbids directory information in a part's filename. Everything is validated
+        before any byte is stored, and a failed upload rolls the whole drop back.
+      parameters:
+      - description: Drop title
+        example: Arquitectura del sistema
+        in: formData
+        name: title
+        required: true
+        type: string
+      - description: File(s) that compose the drop
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: Relative path for each file, in the same order as `file`
+        example: assets/app.css
+        in: formData
+        name: path
+        type: string
+      - description: 'Page to open. Inferred when omitted: the only HTML uploaded,
+          whatever its name, or index.html when there are several'
+        example: index.html
+        in: formData
+        name: entrypoint
+        type: string
+      - description: public (default), unlisted or private
+        enum:
+        - public
+        - unlisted
+        - private
+        in: formData
+        name: visibility
+        type: string
+      - description: Destination folder; defaults to the root
+        example: Proyectos
+        in: formData
+        name: parent
+        type: string
+      - description: Folder name; defaults to a slug of the title
+        example: arquitectura
+        in: formData
+        name: name
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/drop_internal_service.DropDetail'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      summary: Create a drop with its files
+      tags:
+      - drops
+  /v1/files:
+    delete:
+      description: Removes one file from a drop.
+      parameters:
+      - description: Full path of the file
+        example: proyectos/arquitectura/index.html
+        in: query
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: deleted
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      summary: Delete a file
+      tags:
+      - files
+    get:
+      description: Streams a file stored inside a drop.
+      parameters:
+      - description: Full path of the file
+        example: proyectos/arquitectura/index.html
+        in: query
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      summary: Download a file
+      tags:
+      - files
+    post:
+      consumes:
+      - multipart/form-data
+      description: Stores one or more files inside a drop. Send them as multipart/form-data
+        under the `file` field; an existing file of the same name is replaced.
+      parameters:
+      - description: Drop path
+        example: proyectos/arquitectura
+        in: query
+        name: path
+        required: true
+        type: string
+      - description: File(s) to upload
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_httpapi.UploadResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      summary: Upload files to a drop
+      tags:
+      - files
+  /v1/nodes:
+    delete:
+      description: Deletes the node and everything beneath it, including the stored
+        files of every drop in the subtree.
+      parameters:
+      - description: Path of the node to delete
+        example: proyectos/arquitectura
+        in: query
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: deleted
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      summary: Delete a folder or drop
+      tags:
+      - nodes
+    get:
+      description: Lists the direct children of a folder. An empty path lists the
+        root. Returns 409 `is_drop` when the path is a drop — fetch it via /v1/drops
+        instead.
+      parameters:
+      - description: Folder path; empty means the root
+        example: proyectos
+        in: query
+        name: path
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_httpapi.ListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      summary: List folders and drops
+      tags:
+      - nodes
+    post:
+      consumes:
+      - application/json
+      description: Creates a plain organizational folder inside another folder.
+      parameters:
+      - description: Folder to create
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_httpapi.CreateFolderRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/drop_internal_service.Node'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      summary: Create a folder
+      tags:
+      - nodes
+swagger: "2.0"

@@ -1,0 +1,833 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "Admin API for Drop: a Drive-like tree where any folder holding a `.drop` descriptor is a publishable drop. Metadata lives in SQL; file bytes live in MinIO.",
+        "title": "Drop Admin API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "basePath": "/",
+    "paths": {
+        "/healthz": {
+            "get": {
+                "description": "Returns ok when the API process is up.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "operation"
+                ],
+                "summary": "Liveness probe",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.HealthResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/drops": {
+            "get": {
+                "description": "Returns a drop's metadata and the files it is composed of.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "drops"
+                ],
+                "summary": "Get a drop",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "proyectos/arquitectura",
+                        "description": "Drop path",
+                        "name": "path",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/drop_internal_service.DropDetail"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Creates a drop: a node carrying metadata plus a materialized `.drop` YAML descriptor in object storage.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "drops"
+                ],
+                "summary": "Create a drop",
+                "parameters": [
+                    {
+                        "description": "Drop to create",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.CreateDropRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/drop_internal_service.DropDetail"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Patches title, visibility, or entrypoint and refreshes the drop's `.drop` descriptor.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "drops"
+                ],
+                "summary": "Update drop metadata",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "proyectos/arquitectura",
+                        "description": "Drop path",
+                        "name": "path",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to update",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.PatchDropRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/drop_internal_service.DropDetail"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/drops/upload": {
+            "post": {
+                "description": "Creates a drop and uploads its files in a single multipart request. Repeat the `file` field once per file. To place files in subdirectories, repeat a `path` field as well — the Nth `path` names the Nth `file` — because RFC 7578 forbids directory information in a part's filename. Everything is validated before any byte is stored, and a failed upload rolls the whole drop back.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "drops"
+                ],
+                "summary": "Create a drop with its files",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "Arquitectura del sistema",
+                        "description": "Drop title",
+                        "name": "title",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "File(s) that compose the drop",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "example": "assets/app.css",
+                        "description": "Relative path for each file, in the same order as `file`",
+                        "name": "path",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "example": "index.html",
+                        "description": "Page to open. Inferred when omitted: the only HTML uploaded, whatever its name, or index.html when there are several",
+                        "name": "entrypoint",
+                        "in": "formData"
+                    },
+                    {
+                        "enum": [
+                            "public",
+                            "unlisted",
+                            "private"
+                        ],
+                        "type": "string",
+                        "description": "public (default), unlisted or private",
+                        "name": "visibility",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "example": "Proyectos",
+                        "description": "Destination folder; defaults to the root",
+                        "name": "parent",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "example": "arquitectura",
+                        "description": "Folder name; defaults to a slug of the title",
+                        "name": "name",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/drop_internal_service.DropDetail"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/files": {
+            "get": {
+                "description": "Streams a file stored inside a drop.",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "files"
+                ],
+                "summary": "Download a file",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "proyectos/arquitectura/index.html",
+                        "description": "Full path of the file",
+                        "name": "path",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Stores one or more files inside a drop. Send them as multipart/form-data under the `file` field; an existing file of the same name is replaced.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "files"
+                ],
+                "summary": "Upload files to a drop",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "proyectos/arquitectura",
+                        "description": "Drop path",
+                        "name": "path",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "File(s) to upload",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.UploadResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Removes one file from a drop.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "files"
+                ],
+                "summary": "Delete a file",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "proyectos/arquitectura/index.html",
+                        "description": "Full path of the file",
+                        "name": "path",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "deleted"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/nodes": {
+            "get": {
+                "description": "Lists the direct children of a folder. An empty path lists the root. Returns 409 `is_drop` when the path is a drop — fetch it via /v1/drops instead.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "nodes"
+                ],
+                "summary": "List folders and drops",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "proyectos",
+                        "description": "Folder path; empty means the root",
+                        "name": "path",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Creates a plain organizational folder inside another folder.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "nodes"
+                ],
+                "summary": "Create a folder",
+                "parameters": [
+                    {
+                        "description": "Folder to create",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.CreateFolderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/drop_internal_service.Node"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Deletes the node and everything beneath it, including the stored files of every drop in the subtree.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "nodes"
+                ],
+                "summary": "Delete a folder or drop",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "proyectos/arquitectura",
+                        "description": "Path of the node to delete",
+                        "name": "path",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "deleted"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "drop_internal_model.Kind": {
+            "type": "string",
+            "enum": [
+                "folder",
+                "drop"
+            ],
+            "x-enum-varnames": [
+                "KindFolder",
+                "KindDrop"
+            ]
+        },
+        "drop_internal_model.Visibility": {
+            "type": "string",
+            "enum": [
+                "public",
+                "unlisted",
+                "private"
+            ],
+            "x-enum-varnames": [
+                "VisibilityPublic",
+                "VisibilityUnlisted",
+                "VisibilityPrivate"
+            ]
+        },
+        "drop_internal_service.DropDetail": {
+            "type": "object",
+            "properties": {
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/drop_internal_service.FileInfo"
+                    }
+                },
+                "kind": {
+                    "enum": [
+                        "folder",
+                        "drop"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/drop_internal_model.Kind"
+                        }
+                    ],
+                    "example": "drop"
+                },
+                "meta": {
+                    "$ref": "#/definitions/drop_internal_service.DropMeta"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "arquitectura"
+                },
+                "path": {
+                    "type": "string",
+                    "example": "proyectos/arquitectura"
+                }
+            }
+        },
+        "drop_internal_service.DropMeta": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "entrypoint": {
+                    "type": "string",
+                    "example": "index.html"
+                },
+                "slug": {
+                    "type": "string",
+                    "example": "An1UHNyp"
+                },
+                "title": {
+                    "type": "string",
+                    "example": "Arquitectura del sistema"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "visibility": {
+                    "enum": [
+                        "public",
+                        "unlisted",
+                        "private"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/drop_internal_model.Visibility"
+                        }
+                    ],
+                    "example": "public"
+                }
+            }
+        },
+        "drop_internal_service.FileInfo": {
+            "type": "object",
+            "properties": {
+                "content_type": {
+                    "type": "string",
+                    "example": "text/html"
+                },
+                "generated": {
+                    "description": "Generated marks a file the system maintains — the \".drop\" descriptor.\nIt can be listed and read, but not written or deleted through the API.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "modified_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "index.html"
+                },
+                "size": {
+                    "type": "integer",
+                    "example": 1024
+                }
+            }
+        },
+        "drop_internal_service.Node": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "enum": [
+                        "folder",
+                        "drop"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/drop_internal_model.Kind"
+                        }
+                    ],
+                    "example": "drop"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "arquitectura"
+                },
+                "path": {
+                    "type": "string",
+                    "example": "proyectos/arquitectura"
+                }
+            }
+        },
+        "internal_httpapi.CreateDropRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "entrypoint": {
+                    "type": "string",
+                    "example": "index.html"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "arquitectura"
+                },
+                "parent": {
+                    "type": "string",
+                    "example": "proyectos"
+                },
+                "title": {
+                    "type": "string",
+                    "example": "Arquitectura del sistema"
+                },
+                "visibility": {
+                    "enum": [
+                        "public",
+                        "unlisted",
+                        "private"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/drop_internal_model.Visibility"
+                        }
+                    ],
+                    "example": "public"
+                }
+            }
+        },
+        "internal_httpapi.CreateFolderRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "example": "clientes"
+                },
+                "parent": {
+                    "type": "string",
+                    "example": "proyectos"
+                }
+            }
+        },
+        "internal_httpapi.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "not_found"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "resource not found"
+                }
+            }
+        },
+        "internal_httpapi.HealthResponse": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "example": "ok"
+                }
+            }
+        },
+        "internal_httpapi.ListResponse": {
+            "type": "object",
+            "properties": {
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/drop_internal_service.Node"
+                    }
+                },
+                "path": {
+                    "type": "string",
+                    "example": "proyectos"
+                }
+            }
+        },
+        "internal_httpapi.PatchDropRequest": {
+            "type": "object",
+            "properties": {
+                "entrypoint": {
+                    "type": "string",
+                    "example": "index.html"
+                },
+                "title": {
+                    "type": "string",
+                    "example": "Arquitectura v2"
+                },
+                "visibility": {
+                    "enum": [
+                        "public",
+                        "unlisted",
+                        "private"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/drop_internal_model.Visibility"
+                        }
+                    ],
+                    "example": "unlisted"
+                }
+            }
+        },
+        "internal_httpapi.UploadResponse": {
+            "type": "object",
+            "properties": {
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/drop_internal_service.FileInfo"
+                    }
+                }
+            }
+        }
+    }
+}

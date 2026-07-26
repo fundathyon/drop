@@ -1,0 +1,629 @@
+package service
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+
+	"drop/internal/db"
+	"drop/internal/model"
+)
+
+// fakeStore is an in-memory ObjectStore so the service can be tested without
+// a running MinIO.
+type fakeStore struct {
+	mu      sync.Mutex
+	objects map[string][]byte
+	// failOn makes Put fail for any key containing this substring, so a
+	// mid-upload storage outage can be exercised.
+	failOn string
+}
+
+func newFakeStore() *fakeStore {
+	return &fakeStore{objects: map[string][]byte{}}
+}
+
+func (f *fakeStore) Put(_ context.Context, key string, r io.Reader, _ int64, _ string) error {
+	if f.failOn != "" && strings.Contains(key, f.failOn) {
+		return errors.New("storage unavailable")
+	}
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.objects[key] = data
+	return nil
+}
+
+func (f *fakeStore) Get(_ context.Context, key string) (io.ReadCloser, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	data, ok := f.objects[key]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
+}
+
+func (f *fakeStore) Delete(_ context.Context, key string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.objects, key)
+	return nil
+}
+
+func (f *fakeStore) DeletePrefix(_ context.Context, prefix string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for k := range f.objects {
+		if strings.HasPrefix(k, prefix) {
+			delete(f.objects, k)
+		}
+	}
+	return nil
+}
+
+func (f *fakeStore) keys() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, 0, len(f.objects))
+	for k := range f.objects {
+		out = append(out, k)
+	}
+	return out
+}
+
+// uploaded drops the generated ".drop" descriptor, which every drop lists, so
+// assertions can talk about the files a user actually put there.
+func uploaded(files []FileInfo) []FileInfo {
+	out := make([]FileInfo, 0, len(files))
+	for _, f := range files {
+		if !f.Generated {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+func newTestService(t *testing.T) (*Service, *fakeStore) {
+	t.Helper()
+	database, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	store := newFakeStore()
+	return New(database, store), store
+}
+
+func TestCreateFolderAndDrop(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTestService(t)
+
+	if _, err := svc.CreateFolder(ctx, "", "proyectos"); err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+
+	nodes, err := svc.List(ctx, "")
+	if err != nil {
+		t.Fatalf("List root: %v", err)
+	}
+	if len(nodes) != 1 || nodes[0].Kind != model.KindFolder {
+		t.Fatalf("unexpected root listing: %+v", nodes)
+	}
+
+	drop, err := svc.CreateDrop(ctx, DropInput{
+		Parent: "proyectos", Name: "arquitectura",
+		Title: "Arquitectura", Visibility: model.VisibilityPublic,
+	})
+	if err != nil {
+		t.Fatalf("CreateDrop: %v", err)
+	}
+	if drop.Meta.Slug == "" {
+		t.Fatal("expected a generated slug")
+	}
+	if drop.Path != "proyectos/arquitectura" {
+		t.Fatalf("unexpected path: %s", drop.Path)
+	}
+	if drop.Meta.Entrypoint != "index.html" {
+		t.Fatalf("expected default entrypoint, got %q", drop.Meta.Entrypoint)
+	}
+
+	children, err := svc.List(ctx, "proyectos")
+	if err != nil {
+		t.Fatalf("List proyectos: %v", err)
+	}
+	if len(children) != 1 || children[0].Kind != model.KindDrop {
+		t.Fatalf("expected one drop child, got %+v", children)
+	}
+
+	// Listing a drop is a category error: it holds files, not child nodes.
+	if _, err := svc.List(ctx, "proyectos/arquitectura"); err != ErrIsDrop {
+		t.Fatalf("expected ErrIsDrop, got %v", err)
+	}
+
+	// Nor can a drop hold folders.
+	if _, err := svc.CreateFolder(ctx, "proyectos/arquitectura", "sub"); err != ErrIsDrop {
+		t.Fatalf("expected ErrIsDrop creating inside a drop, got %v", err)
+	}
+
+	// Duplicate names collide.
+	if _, err := svc.CreateFolder(ctx, "", "proyectos"); err != ErrExists {
+		t.Fatalf("expected ErrExists, got %v", err)
+	}
+}
+
+func TestDropDescriptorMaterialized(t *testing.T) {
+	ctx := context.Background()
+	svc, store := newTestService(t)
+
+	drop, err := svc.CreateDrop(ctx, DropInput{Name: "site", Title: "Site"})
+	if err != nil {
+		t.Fatalf("CreateDrop: %v", err)
+	}
+
+	key := objectKey(drop.Meta.Slug, MetaFileName)
+	body, err := store.Get(ctx, key)
+	if err != nil {
+		t.Fatalf("expected %s to exist in storage: %v", key, err)
+	}
+	defer body.Close()
+
+	data, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatalf("read descriptor: %v", err)
+	}
+	for _, want := range []string{"title: Site", "slug: " + drop.Meta.Slug, "entrypoint: index.html"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("descriptor missing %q; got:\n%s", want, data)
+		}
+	}
+}
+
+func TestDescriptorIsListedAndReadableButNotWritable(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTestService(t)
+
+	if _, err := svc.CreateDrop(ctx, DropInput{Name: "site", Title: "Site"}); err != nil {
+		t.Fatalf("CreateDrop: %v", err)
+	}
+
+	detail, err := svc.GetDrop(ctx, "site")
+	if err != nil {
+		t.Fatalf("GetDrop: %v", err)
+	}
+	if len(detail.Files) != 1 {
+		t.Fatalf("expected the descriptor to be listed, got %+v", detail.Files)
+	}
+	descriptor := detail.Files[0]
+	if descriptor.Name != MetaFileName || !descriptor.Generated {
+		t.Fatalf("unexpected descriptor entry: %+v", descriptor)
+	}
+	if descriptor.Size == 0 {
+		t.Error("descriptor should report the size of the stored YAML")
+	}
+
+	// Readable...
+	body, info, err := svc.OpenFile(ctx, "site/"+MetaFileName)
+	if err != nil {
+		t.Fatalf("OpenFile descriptor: %v", err)
+	}
+	data, _ := io.ReadAll(body)
+	body.Close()
+	if !strings.Contains(string(data), "title: Site") {
+		t.Errorf("descriptor content unexpected:\n%s", data)
+	}
+	if !info.Generated {
+		t.Error("descriptor read should be flagged as generated")
+	}
+
+	// ...but never writable or deletable through the file API.
+	if _, err := svc.SaveFile(ctx, "site", MetaFileName, strings.NewReader("x"), 1, "text/plain"); err != ErrInvalidPath {
+		t.Errorf("expected ErrInvalidPath overwriting the descriptor, got %v", err)
+	}
+	if err := svc.DeleteFile(ctx, "site/"+MetaFileName); err != ErrNotFound {
+		t.Errorf("expected ErrNotFound deleting the descriptor, got %v", err)
+	}
+
+	// Deleting it must not have removed it.
+	if detail, err = svc.GetDrop(ctx, "site"); err != nil || len(detail.Files) != 1 {
+		t.Fatalf("descriptor should survive: err=%v files=%+v", err, detail.Files)
+	}
+}
+
+func uploadFile(path, contentType, body string) UploadFile {
+	return UploadFile{
+		Path:        path,
+		ContentType: contentType,
+		Size:        int64(len(body)),
+		Open:        func() (io.ReadCloser, error) { return io.NopCloser(strings.NewReader(body)), nil },
+	}
+}
+
+func TestUploadDrop(t *testing.T) {
+	ctx := context.Background()
+	svc, store := newTestService(t)
+
+	detail, err := svc.UploadDrop(ctx, UploadDropInput{
+		Title: "Arquitectura del sistema",
+		Files: []UploadFile{
+			uploadFile("index.html", "text/html", "<h1>hola</h1>"),
+			uploadFile("assets/app.css", "text/css", "body{}"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("UploadDrop: %v", err)
+	}
+
+	// Name defaults to a slug of the title; visibility defaults to public.
+	if detail.Name != "arquitectura-del-sistema" {
+		t.Errorf("unexpected derived name: %q", detail.Name)
+	}
+	if detail.Meta.Visibility != model.VisibilityPublic {
+		t.Errorf("expected public by default, got %q", detail.Meta.Visibility)
+	}
+	if detail.Meta.Entrypoint != "index.html" {
+		t.Errorf("unexpected entrypoint: %q", detail.Meta.Entrypoint)
+	}
+
+	names := make([]string, 0, len(detail.Files))
+	for _, f := range uploaded(detail.Files) {
+		names = append(names, f.Name)
+	}
+	if len(names) != 2 || names[0] != "assets/app.css" || names[1] != "index.html" {
+		t.Fatalf("unexpected files: %v", names)
+	}
+
+	// The nested file is readable back through its full path.
+	body, _, err := svc.OpenFile(ctx, detail.Path+"/assets/app.css")
+	if err != nil {
+		t.Fatalf("OpenFile nested: %v", err)
+	}
+	got, _ := io.ReadAll(body)
+	body.Close()
+	if string(got) != "body{}" {
+		t.Errorf("nested round-trip mismatch: %q", got)
+	}
+
+	// Stored under the drop's slug, preserving the subdirectory.
+	wantKey := "drops/" + detail.Meta.Slug + "/assets/app.css"
+	if _, err := store.Get(ctx, wantKey); err != nil {
+		t.Errorf("expected object at %s: %v", wantKey, err)
+	}
+}
+
+func TestUploadDropInfersEntrypoint(t *testing.T) {
+	ctx := context.Background()
+
+	cases := []struct {
+		name  string
+		files []string
+		want  string
+	}{
+		{
+			name:  "a lone page becomes the entrypoint whatever its name",
+			files: []string{"requisitos-planes-facturacion.html"},
+			want:  "requisitos-planes-facturacion.html",
+		},
+		{
+			name:  "a lone page alongside assets still wins",
+			files: []string{"assets/app.css", "informe.html", "assets/logo.svg"},
+			want:  "informe.html",
+		},
+		{
+			name:  "index.html wins when there are several pages",
+			files: []string{"about.html", "index.html", "contact.html"},
+			want:  "index.html",
+		},
+		{
+			name:  "a nested index decides it when there is no root one",
+			files: []string{"site/index.html", "site/about.html"},
+			want:  "site/index.html",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, _ := newTestService(t)
+			files := make([]UploadFile, 0, len(tc.files))
+			for _, p := range tc.files {
+				files = append(files, uploadFile(p, "text/html", "x"))
+			}
+			detail, err := svc.UploadDrop(ctx, UploadDropInput{Title: "Inferido", Files: files})
+			if err != nil {
+				t.Fatalf("UploadDrop: %v", err)
+			}
+			if detail.Meta.Entrypoint != tc.want {
+				t.Fatalf("expected entrypoint %q, got %q", tc.want, detail.Meta.Entrypoint)
+			}
+		})
+	}
+}
+
+func TestUploadDropAmbiguousEntrypoint(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("several pages without an index", func(t *testing.T) {
+		svc, _ := newTestService(t)
+		_, err := svc.UploadDrop(ctx, UploadDropInput{
+			Title: "Ambiguo",
+			Files: []UploadFile{
+				uploadFile("about.html", "text/html", "x"),
+				uploadFile("contact.html", "text/html", "x"),
+			},
+		})
+		if !errors.Is(err, ErrEntrypointMissing) {
+			t.Fatalf("expected ErrEntrypointMissing, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "about.html") {
+			t.Errorf("the error should name the candidates, got: %v", err)
+		}
+	})
+
+	t.Run("no HTML at all", func(t *testing.T) {
+		svc, _ := newTestService(t)
+		_, err := svc.UploadDrop(ctx, UploadDropInput{
+			Title: "Sin HTML",
+			Files: []UploadFile{uploadFile("notas.txt", "text/plain", "x")},
+		})
+		if !errors.Is(err, ErrEntrypointMissing) {
+			t.Fatalf("expected ErrEntrypointMissing, got %v", err)
+		}
+	})
+}
+
+func TestUploadDropValidation(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTestService(t)
+
+	cases := []struct {
+		name  string
+		input UploadDropInput
+		want  error
+	}{
+		{
+			name:  "no files",
+			input: UploadDropInput{Title: "Sin archivos"},
+			want:  ErrInvalidPath,
+		},
+		{
+			name:  "no title",
+			input: UploadDropInput{Files: []UploadFile{uploadFile("index.html", "text/html", "x")}},
+			want:  ErrInvalidPath,
+		},
+		{
+			name: "entrypoint not uploaded",
+			input: UploadDropInput{
+				Title:      "Sin entrypoint",
+				Entrypoint: "main.html",
+				Files:      []UploadFile{uploadFile("index.html", "text/html", "x")},
+			},
+			want: ErrEntrypointMissing,
+		},
+		{
+			name: "traversal in a file path",
+			input: UploadDropInput{
+				Title: "Hostil",
+				Files: []UploadFile{uploadFile("../../etc/passwd", "text/plain", "x")},
+			},
+			want: ErrInvalidPath,
+		},
+		{
+			name: "reserved descriptor name",
+			input: UploadDropInput{
+				Title: "Reservado",
+				Files: []UploadFile{uploadFile("assets/"+MetaFileName, "text/plain", "x")},
+			},
+			want: ErrInvalidPath,
+		},
+		{
+			name: "duplicate paths",
+			input: UploadDropInput{
+				Title: "Duplicado",
+				Files: []UploadFile{
+					uploadFile("index.html", "text/html", "a"),
+					uploadFile("./index.html", "text/html", "b"),
+				},
+			},
+			want: ErrInvalidPath,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := svc.UploadDrop(ctx, tc.input); !errors.Is(err, tc.want) {
+				t.Fatalf("expected %v, got %v", tc.want, err)
+			}
+		})
+	}
+
+	// None of the rejected requests may have left a node behind.
+	nodes, err := svc.List(ctx, "")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(nodes) != 0 {
+		t.Fatalf("expected no drops created, got %+v", nodes)
+	}
+}
+
+func TestUploadDropRollsBackOnStorageFailure(t *testing.T) {
+	ctx := context.Background()
+	svc, store := newTestService(t)
+
+	// Fail the second file, after the drop and the first file already exist.
+	store.failOn = "second.css"
+
+	_, err := svc.UploadDrop(ctx, UploadDropInput{
+		Title: "Fallo a media subida",
+		Files: []UploadFile{
+			uploadFile("index.html", "text/html", "<h1>ok</h1>"),
+			uploadFile("second.css", "text/css", "body{}"),
+		},
+	})
+	if err == nil {
+		t.Fatal("expected the upload to fail")
+	}
+
+	nodes, err := svc.List(ctx, "")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(nodes) != 0 {
+		t.Fatalf("expected the drop to be rolled back, got %+v", nodes)
+	}
+	if keys := store.keys(); len(keys) != 0 {
+		t.Fatalf("expected storage to be cleaned, got %v", keys)
+	}
+}
+
+func TestPathTraversalRejected(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTestService(t)
+
+	for _, parent := range []string{"../etc", "a/../../b", "/etc/passwd", "a/../..", "..", "a/./../.."} {
+		if _, err := svc.CreateFolder(ctx, parent, "x"); err != ErrInvalidPath {
+			t.Errorf("parent=%q: expected ErrInvalidPath, got %v", parent, err)
+		}
+	}
+
+	for _, name := range []string{"..", ".", "a/b", ".drop", "", "a\\b"} {
+		if _, err := svc.CreateFolder(ctx, "", name); err != ErrInvalidPath {
+			t.Errorf("name=%q: expected ErrInvalidPath, got %v", name, err)
+		}
+	}
+}
+
+func TestUploadDownloadAndDeleteFile(t *testing.T) {
+	ctx := context.Background()
+	svc, store := newTestService(t)
+
+	if _, err := svc.CreateDrop(ctx, DropInput{Name: "site"}); err != nil {
+		t.Fatalf("CreateDrop: %v", err)
+	}
+
+	const content = "<h1>hola</h1>"
+	info, err := svc.SaveFile(ctx, "site", "index.html", strings.NewReader(content), int64(len(content)), "text/html")
+	if err != nil {
+		t.Fatalf("SaveFile: %v", err)
+	}
+	if info.Size != int64(len(content)) || info.ContentType != "text/html" {
+		t.Fatalf("unexpected file info: %+v", info)
+	}
+
+	detail, err := svc.GetDrop(ctx, "site")
+	if err != nil {
+		t.Fatalf("GetDrop: %v", err)
+	}
+	if files := uploaded(detail.Files); len(files) != 1 || files[0].Name != "index.html" {
+		t.Fatalf("unexpected files: %+v", detail.Files)
+	}
+
+	body, _, err := svc.OpenFile(ctx, "site/index.html")
+	if err != nil {
+		t.Fatalf("OpenFile: %v", err)
+	}
+	got, _ := io.ReadAll(body)
+	body.Close()
+	if string(got) != content {
+		t.Fatalf("round-trip mismatch: %q", got)
+	}
+
+	// The reserved descriptor name cannot be overwritten through the file API.
+	if _, err := svc.SaveFile(ctx, "site", MetaFileName, strings.NewReader("x"), 1, "text/plain"); err != ErrInvalidPath {
+		t.Fatalf("expected ErrInvalidPath writing %s, got %v", MetaFileName, err)
+	}
+
+	// Re-uploading the same name replaces rather than duplicating.
+	const updated = "<h1>hola de nuevo</h1>"
+	if _, err := svc.SaveFile(ctx, "site", "index.html", strings.NewReader(updated), int64(len(updated)), "text/html"); err != nil {
+		t.Fatalf("SaveFile replace: %v", err)
+	}
+	detail, err = svc.GetDrop(ctx, "site")
+	if err != nil {
+		t.Fatalf("GetDrop: %v", err)
+	}
+	if files := uploaded(detail.Files); len(files) != 1 {
+		t.Fatalf("expected the file to be replaced, got %+v", detail.Files)
+	}
+
+	if err := svc.DeleteFile(ctx, "site/index.html"); err != nil {
+		t.Fatalf("DeleteFile: %v", err)
+	}
+	detail, err = svc.GetDrop(ctx, "site")
+	if err != nil {
+		t.Fatalf("GetDrop: %v", err)
+	}
+	if files := uploaded(detail.Files); len(files) != 0 {
+		t.Fatalf("expected no files, got %+v", detail.Files)
+	}
+
+	// The descriptor survives; only the uploaded object is gone.
+	if keys := store.keys(); len(keys) != 1 || !strings.HasSuffix(keys[0], MetaFileName) {
+		t.Fatalf("unexpected objects after delete: %v", keys)
+	}
+}
+
+func TestUpdateDropMeta(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTestService(t)
+
+	if _, err := svc.CreateDrop(ctx, DropInput{Name: "site", Title: "Site"}); err != nil {
+		t.Fatalf("CreateDrop: %v", err)
+	}
+
+	title := "Nuevo título"
+	visibility := model.VisibilityPublic
+	detail, err := svc.UpdateDropMeta(ctx, "site", DropPatch{Title: &title, Visibility: &visibility})
+	if err != nil {
+		t.Fatalf("UpdateDropMeta: %v", err)
+	}
+	if detail.Meta.Title != title || detail.Meta.Visibility != model.VisibilityPublic {
+		t.Fatalf("unexpected meta: %+v", detail.Meta)
+	}
+
+	bogus := model.Visibility("banana")
+	if _, err := svc.UpdateDropMeta(ctx, "site", DropPatch{Visibility: &bogus}); err == nil {
+		t.Fatal("expected an error for an invalid visibility")
+	}
+}
+
+func TestDeleteRecursiveRemovesObjects(t *testing.T) {
+	ctx := context.Background()
+	svc, store := newTestService(t)
+
+	if _, err := svc.CreateFolder(ctx, "", "proyectos"); err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+	if _, err := svc.CreateDrop(ctx, DropInput{Parent: "proyectos", Name: "site"}); err != nil {
+		t.Fatalf("CreateDrop: %v", err)
+	}
+	if _, err := svc.SaveFile(ctx, "proyectos/site", "a.html", strings.NewReader("a"), 1, "text/html"); err != nil {
+		t.Fatalf("SaveFile: %v", err)
+	}
+
+	if err := svc.Delete(ctx, "proyectos"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	nodes, err := svc.List(ctx, "")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(nodes) != 0 {
+		t.Fatalf("expected an empty root, got %+v", nodes)
+	}
+	if keys := store.keys(); len(keys) != 0 {
+		t.Fatalf("expected storage to be cleaned, got %v", keys)
+	}
+
+	if err := svc.Delete(ctx, ""); err != ErrInvalidPath {
+		t.Fatalf("expected ErrInvalidPath deleting the root, got %v", err)
+	}
+}
