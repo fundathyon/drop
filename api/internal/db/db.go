@@ -34,7 +34,10 @@ func Open(dsn string) (*gorm.DB, error) {
 		}
 	}
 
-	if err := g.AutoMigrate(&model.Node{}, &model.Version{}, &model.File{}); err != nil {
+	if err := g.AutoMigrate(
+		&model.Node{}, &model.Version{}, &model.File{},
+		&model.User{}, &model.Session{}, &model.Invitation{},
+	); err != nil {
 		return nil, fmt.Errorf("migrate schema: %w", err)
 	}
 	return g, nil

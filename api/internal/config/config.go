@@ -2,9 +2,11 @@
 package config
 
 import (
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -19,6 +21,30 @@ type Config struct {
 	InjectWidget bool
 	CORSOrigins  []string
 	S3           S3
+	Auth         Auth
+}
+
+// Auth configures signing and the bootstrap administrator.
+type Auth struct {
+	// PrivateKeyPath and PublicKeyPath hold the RS256 keypair. There is no
+	// shared-secret fallback: a symmetric key would have to be handed to
+	// everything that verifies a token, and each of those could then mint one.
+	PrivateKeyPath string
+	PublicKeyPath  string
+	Issuer         string
+	// AccessTTL and RefreshTTL are configured rather than compiled in, so the
+	// window of a stolen token can be changed without a release.
+	AccessTTL  time.Duration
+	RefreshTTL time.Duration
+	// InvitationTTL is how long an invitation link stays usable.
+	InvitationTTL time.Duration
+	// AdminEmail and AdminPassword create the first administrator on an empty
+	// database. An existing admin is never modified from here.
+	AdminEmail    string
+	AdminPassword string
+	// CookieSecure marks the refresh cookie Secure. It defaults to off so
+	// plain-HTTP localhost works, and must be on anywhere else.
+	CookieSecure bool
 }
 
 // S3 points at a MinIO (or any S3-compatible) endpoint holding drop content.
@@ -46,7 +72,34 @@ func Load() Config {
 			Bucket:    env("DROP_S3_BUCKET", "drop-content"),
 			UseSSL:    envBool("DROP_S3_USE_SSL", false),
 		},
+		Auth: Auth{
+			PrivateKeyPath: env("JWT_PRIVATE_KEY_PATH", "./certs/private.pem"),
+			PublicKeyPath:  env("JWT_PUBLIC_KEY_PATH", "./certs/public.pem"),
+			Issuer:         env("JWT_ISSUER", "drop"),
+			AccessTTL:      envDuration("ACCESS_TOKEN_TTL", 15*time.Minute),
+			RefreshTTL:     envDuration("REFRESH_TOKEN_TTL", 720*time.Hour),
+			InvitationTTL:  envDuration("INVITATION_TTL", 72*time.Hour),
+			AdminEmail:     env("ADMIN_EMAIL", "admin@drop.local"),
+			AdminPassword:  env("ADMIN_PASSWORD", "admin"),
+			CookieSecure:   envBool("AUTH_COOKIE_SECURE", false),
+		},
 	}
+}
+
+// envDuration reads a Go duration such as "15m" or "720h".
+func envDuration(key string, fallback time.Duration) time.Duration {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		// Falling back silently would hand out tokens with a lifetime nobody
+		// asked for, so this is loud.
+		slog.Warn("ignoring invalid duration", "key", key, "value", raw, "using", fallback)
+		return fallback
+	}
+	return d
 }
 
 func env(key, fallback string) string {
