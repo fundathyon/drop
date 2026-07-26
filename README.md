@@ -69,8 +69,11 @@ OrbStack…).
 make dev
 ```
 
-Levanta MinIO con docker compose y ejecuta el servidor desde el código en
-`:8000`. Para compilar el binario y ejecutarlo:
+Levanta MinIO con docker compose, genera el par RSA que firma los tokens si no
+existe, y ejecuta el servidor desde el código en `:8000`. Entra con lo que haya
+en `ADMIN_EMAIL` / `ADMIN_PASSWORD` (por defecto `admin@drop.local` / `admin`).
+
+Para compilar el binario y ejecutarlo:
 
 ```bash
 make build && make run
@@ -97,15 +100,41 @@ make clean     # borra binarios, la DB local y los volúmenes de MinIO
 | **Swagger UI** | **http://localhost:8000/docs** |
 | Consola de MinIO | http://localhost:9001 (`dropadmin` / `dropadmin123`) |
 
-> El admin no tiene autenticación todavía, y comparte puerto con los drops
-> publicados. Sirve para desarrollo y para una red de confianza; no lo expongas
-> a internet tal cual.
+## Autenticación
+
+Todo pide credenciales menos lo que tiene que ser público: `/healthz`, los
+drops publicados en `/d/`, el formulario de entrada y los enlaces de invitación.
+
+- **El admin** usa una cookie `HttpOnly` de sesión. Se renderiza en el servidor,
+  así que nada en la página necesita leer el token — y una vulnerabilidad de XSS
+  tampoco puede.
+- **La API** usa `Authorization: Bearer <token>`, firmado con **RS256**. Nunca
+  hay secretos compartidos: la clave que firma no es la que verifica. Genera el
+  par con `make keys`; sin él el proceso no arranca, en vez de degradarse en
+  silencio a algo más débil.
+- **No hay registro abierto.** Las cuentas nacen del administrador inicial o de
+  una invitación de un solo uso, con caducidad. No se envía ningún correo: el
+  enlace se muestra una vez y lo repartes tú. Solo se guarda su hash, así que un
+  enlace perdido se reemite, nunca se recupera.
+- Las contraseñas se guardan con **Argon2id**, y entrar o refrescar están
+  limitados por intentos.
+
+El primer administrador se crea al arrancar desde `ADMIN_EMAIL` y
+`ADMIN_PASSWORD` si no existe ninguno. Si ya existe, no se toca — ni su
+contraseña.
+
+> Cambia la contraseña del administrador inicial antes de exponer esto a nadie,
+> y pon `AUTH_COOKIE_SECURE=true` en cuanto no sea `localhost`, o el navegador
+> enviará la cookie de sesión por HTTP en claro.
 
 ## Endpoints
 
 ```
 GET    /                            panel de administración
+GET    /login                       entrar (público)
+GET    /invitacion?token=           aceptar una invitación (público)
 GET    /admin/edit?path=&name=      editor de un archivo del drop
+GET    /admin/usuarios              cuentas e invitaciones (solo admin)
 POST   /admin/…                     acciones del panel (formularios; redirigen)
 GET    /healthz
 GET    /d/{slug}/                   abrir un drop publicado (su entrypoint)
@@ -123,6 +152,29 @@ POST   /v1/drops/versions/activate?path=   volver a publicar una versión  {seq}
 GET    /v1/files?path=              descargar/ver un archivo
 POST   /v1/files?path=              subir archivo(s) (multipart, campo "file")
 DELETE /v1/files?path=              borrar un archivo
+
+POST   /v1/auth/login               credenciales -> tokens   {email, password}
+POST   /v1/auth/refresh             renovar el access token  {refresh_token}
+POST   /v1/auth/logout              revocar la sesión        {refresh_token}
+GET    /v1/auth/me                  quién eres
+GET    /v1/users                    listar cuentas                 (solo admin)
+PATCH  /v1/users/{id}/active        activar o desactivar           (solo admin)
+DELETE /v1/users/{id}               borrar una cuenta              (solo admin)
+GET    /v1/invitations              listar invitaciones            (solo admin)
+POST   /v1/invitations              invitar {email, role}          (solo admin)
+DELETE /v1/invitations/{id}         revocar una invitación         (solo admin)
+```
+
+Para usar la API desde un script, pide un token y mándalo en cada petición:
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8000/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"admin@drop.local","password":"admin"}' | jq -r .access_token)
+
+curl -X POST http://localhost:8000/v1/drops/upload \
+  -H "Authorization: Bearer $TOKEN" \
+  -F 'title=Mi documento' -F 'file=@index.html'
 ```
 
 La documentación viva, con los esquemas y el "try it out", está en
@@ -153,3 +205,14 @@ La API lee [`api/.env`](api/.env).
 | `DROP_S3_BUCKET` | `drop-content` | Bucket de contenido |
 | `DROP_S3_USE_SSL` | `false` | TLS hacia el object store |
 | `DROP_INJECT_WIDGET` | `true` | Inyecta el badge de Drop en las páginas HTML publicadas |
+| `JWT_PRIVATE_KEY_PATH` | `./certs/private.pem` | Clave RSA que firma los tokens (`make keys`) |
+| `JWT_PUBLIC_KEY_PATH` | `./certs/public.pem` | Clave pública que los verifica |
+| `JWT_ISSUER` | `drop` | Emisor que llevan los tokens |
+| `ACCESS_TOKEN_TTL` | `15m` | Caducidad del access token |
+| `REFRESH_TOKEN_TTL` | `720h` | Caducidad del refresh token y de la sesión del navegador |
+| `INVITATION_TTL` | `72h` | Cuánto sirve un enlace de invitación |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | `admin@drop.local` / `admin` | Administrador creado si no hay ninguno |
+| `AUTH_COOKIE_SECURE` | `false` | Marca la cookie de sesión como `Secure`; ponlo en `true` fuera de localhost |
+
+Ninguna caducidad está fijada en el código: todas salen de aquí, así que la
+ventana de un token robado se cambia sin recompilar.
