@@ -248,13 +248,14 @@ func (s *Service) openSession(ctx context.Context, user *model.User, device Devi
 	}, nil
 }
 
-// Refresh exchanges a valid refresh token for a new access token. The refresh
-// token itself is left in place; rotating it is the next step this shape was
-// chosen to allow, not something today's clients expect.
-func (s *Service) Refresh(ctx context.Context, refreshToken string) (Tokens, UserInfo, error) {
+// resolveSession validates a refresh token against the session it was issued
+// for and the account behind it. Both Refresh and SessionUser go through it, so
+// a revoked session and a disabled account are rejected the same way whether
+// the caller is an API client or a browser.
+func (s *Service) resolveSession(ctx context.Context, refreshToken string) (*model.Session, *model.User, error) {
 	claims, err := s.issuer.Verify(refreshToken, KindRefresh)
 	if err != nil {
-		return Tokens{}, UserInfo{}, ErrInvalidCredentials
+		return nil, nil, ErrInvalidCredentials
 	}
 
 	var session model.Session
@@ -265,32 +266,60 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (Tokens, Use
 		Where("id = ? AND token_hash = ?", claims.SessionID, hashToken(refreshToken)).
 		First(&session).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return Tokens{}, UserInfo{}, ErrInvalidCredentials
+		return nil, nil, ErrInvalidCredentials
 	}
 	if err != nil {
-		return Tokens{}, UserInfo{}, err
+		return nil, nil, err
 	}
-
-	now := time.Now().UTC()
-	if !session.Usable(now) {
-		return Tokens{}, UserInfo{}, ErrInvalidCredentials
+	if !session.Usable(time.Now().UTC()) {
+		return nil, nil, ErrInvalidCredentials
 	}
 
 	var user model.User
 	if err := s.db.WithContext(ctx).First(&user, session.UserID).Error; err != nil {
-		return Tokens{}, UserInfo{}, ErrInvalidCredentials
+		return nil, nil, ErrInvalidCredentials
 	}
 	// Deactivating someone has to take effect before their access token would
 	// have expired, which means checking here rather than trusting the token.
 	if !user.Active {
-		return Tokens{}, UserInfo{}, ErrAccountDisabled
+		return nil, nil, ErrAccountDisabled
+	}
+	return &session, &user, nil
+}
+
+// SessionUser resolves who is behind a refresh token, without minting anything.
+//
+// It exists for the server-rendered admin, which keeps the refresh token in a
+// cookie and authorizes each page from it directly. Going through Refresh
+// instead would sign an access token on every page view that nothing would ever
+// read.
+func (s *Service) SessionUser(ctx context.Context, refreshToken string) (UserInfo, error) {
+	session, user, err := s.resolveSession(ctx, refreshToken)
+	if err != nil {
+		return UserInfo{}, err
+	}
+	if err := s.db.WithContext(ctx).Model(session).
+		Update("last_used_at", time.Now().UTC()).Error; err != nil {
+		return UserInfo{}, err
+	}
+	return userInfo(user), nil
+}
+
+// Refresh exchanges a valid refresh token for a new access token. The refresh
+// token itself is left in place; rotating it is the next step this shape was
+// chosen to allow, not something today's clients expect.
+func (s *Service) Refresh(ctx context.Context, refreshToken string) (Tokens, UserInfo, error) {
+	session, user, err := s.resolveSession(ctx, refreshToken)
+	if err != nil {
+		return Tokens{}, UserInfo{}, err
 	}
 
 	access, expires, err := s.issuer.Access(user.ID, string(user.Role))
 	if err != nil {
 		return Tokens{}, UserInfo{}, err
 	}
-	if err := s.db.WithContext(ctx).Model(&session).Update("last_used_at", now).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(session).
+		Update("last_used_at", time.Now().UTC()).Error; err != nil {
 		return Tokens{}, UserInfo{}, err
 	}
 
@@ -299,7 +328,34 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (Tokens, Use
 		ExpiresAt:    expires,
 		RefreshToken: refreshToken,
 		RefreshUntil: session.ExpiresAt,
-	}, userInfo(&user), nil
+	}, userInfo(user), nil
+}
+
+// UserFromAccessToken authorizes an API call from a bearer token.
+//
+// The token carries the role, so this could answer without touching the
+// database. It reads the row anyway: an access token stays valid for its whole
+// lifetime, and without this check a disabled account would keep working until
+// it expired. One indexed lookup against a local database is a cheaper price
+// than that window.
+func (s *Service) UserFromAccessToken(ctx context.Context, token string) (UserInfo, error) {
+	claims, err := s.issuer.Verify(token, KindAccess)
+	if err != nil {
+		return UserInfo{}, ErrInvalidCredentials
+	}
+	id, err := claims.UserID()
+	if err != nil {
+		return UserInfo{}, ErrInvalidCredentials
+	}
+
+	user, err := s.userByID(ctx, id)
+	if err != nil {
+		return UserInfo{}, ErrInvalidCredentials
+	}
+	if !user.Active {
+		return UserInfo{}, ErrAccountDisabled
+	}
+	return userInfo(user), nil
 }
 
 // Logout revokes the session behind a refresh token. It is deliberately quiet
