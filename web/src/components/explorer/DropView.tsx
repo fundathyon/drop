@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Download, FileText, Lock, Pencil, Trash2, Upload } from 'lucide-react';
+import { Download, ExternalLink, FileText, Lock, Pencil, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { FileEditorDialog } from '@/components/explorer/FileEditorDialog';
@@ -86,6 +86,19 @@ export function DropView({ detail, onChanged, onDeleted }: Props) {
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-sm font-semibold">Archivos</h2>
         <Badge variant="secondary">{detail.meta.visibility}</Badge>
+        {/* A private drop answers 404 at its URL, so don't offer the link. */}
+        {detail.meta.visibility !== 'private' && (
+          <a
+            href={detail.url}
+            target="_blank"
+            rel="noopener"
+            className="flex items-center gap-1 text-xs text-primary hover:underline"
+            title="Abrir el drop publicado"
+          >
+            <ExternalLink className="size-3" />
+            {detail.url.replace(/^https?:\/\//, '')}
+          </a>
+        )}
 
         <div className="ml-auto flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>

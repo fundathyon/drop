@@ -33,6 +33,8 @@ export interface FileInfo {
 
 /** A drop's identity, metadata, and the files that compose it. */
 export interface DropDetail extends Node {
+  /** Where the drop can be opened; a private drop answers 404 there. */
+  url: string;
   meta: DropMeta;
   files: FileInfo[];
 }
