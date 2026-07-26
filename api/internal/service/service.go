@@ -127,7 +127,8 @@ type FileInfo struct {
 type DropDetail struct {
 	Node
 	// URL is where the drop can be opened. Serving it is subject to
-	// visibility: a private drop answers 404 there.
+	// visibility: a private drop answers there only for the accounts that may
+	// open it, and 404s for everyone else.
 	URL   string     `json:"url" example:"http://localhost:8000/d/An1UHNyp/"`
 	Meta  DropMeta   `json:"meta"`
 	Files []FileInfo `json:"files"`
@@ -1306,13 +1307,14 @@ func (s *Service) OpenFile(ctx context.Context, actor uint, ref Ref) (io.ReadClo
 }
 
 // GetDropBySlug looks a drop up by its public slug. Like OpenPublicFile it
-// hides private drops behind ErrNotFound.
-func (s *Service) GetDropBySlug(ctx context.Context, slug string) (DropDetail, error) {
-	node, err := s.publishedDrop(ctx, slug)
+// hides a drop the actor may not open behind ErrNotFound.
+func (s *Service) GetDropBySlug(ctx context.Context, actor uint, slug string) (DropDetail, error) {
+	node, err := s.publishedDrop(ctx, actor, slug)
 	if err != nil {
 		return DropDetail{}, err
 	}
-	// Nobody is signed in on a published page, so it carries no access level.
+	// A published page is not the panel: it offers none of the actions an
+	// access level would unlock, so it carries none.
 	return s.detail(ctx, node, AccessNone)
 }
 
@@ -1332,8 +1334,8 @@ type PublishedVersion struct {
 
 // GetPublishedVersion resolves what a public URL is serving, for the badge
 // injected into published pages.
-func (s *Service) GetPublishedVersion(ctx context.Context, slug string, seq uint, pinned bool) (PublishedVersion, error) {
-	node, err := s.publishedDrop(ctx, slug)
+func (s *Service) GetPublishedVersion(ctx context.Context, actor uint, slug string, seq uint, pinned bool) (PublishedVersion, error) {
+	node, err := s.publishedDrop(ctx, actor, slug)
 	if err != nil {
 		return PublishedVersion{}, err
 	}
@@ -1366,10 +1368,14 @@ func (s *Service) GetPublishedVersion(ctx context.Context, slug string, seq uint
 	return PublishedVersion{Detail: detail, Seq: version.Seq, Pinned: pinned, Files: files}, nil
 }
 
-// publishedDrop resolves a slug to a drop that may be served. Private drops
-// answer ErrNotFound rather than a 403, so the response does not reveal that
-// the slug exists.
-func (s *Service) publishedDrop(ctx context.Context, slug string) (*model.Node, error) {
+// publishedDrop resolves a slug to a drop that may be served to this actor.
+//
+// A private drop is not published, but it is not a dead address either: whoever
+// can open it in the panel — its owner, and anyone it has been shared with —
+// can open its URL too. To everybody else, signed in or not, it answers
+// ErrNotFound rather than a 403, so the response never confirms that the slug
+// exists. An actor of zero is an anonymous visitor.
+func (s *Service) publishedDrop(ctx context.Context, actor uint, slug string) (*model.Node, error) {
 	var node model.Node
 	err := s.db.WithContext(ctx).
 		Where("slug = ? AND kind = ?", slug, model.KindDrop).First(&node).Error
@@ -1379,7 +1385,17 @@ func (s *Service) publishedDrop(ctx context.Context, slug string) (*model.Node, 
 	if err != nil {
 		return nil, err
 	}
-	if node.Visibility == model.VisibilityPrivate {
+	if node.Visibility != model.VisibilityPrivate {
+		return &node, nil
+	}
+	if actor == 0 {
+		return nil, ErrNotFound
+	}
+	level, err := s.accessTo(ctx, actor, &node)
+	if err != nil {
+		return nil, err
+	}
+	if !level.CanRead() {
 		return nil, ErrNotFound
 	}
 	return &node, nil
@@ -1392,18 +1408,28 @@ func (s *Service) resolveVersion(ctx context.Context, node *model.Node, seq uint
 	return s.currentVersion(ctx, node)
 }
 
-// OpenPublicFile serves a published drop by slug. An empty relPath resolves to
-// the version's entrypoint; a leading "@<seq>" pins an older snapshot.
-func (s *Service) OpenPublicFile(ctx context.Context, slug, relPath string) (io.ReadCloser, FileInfo, error) {
-	node, err := s.publishedDrop(ctx, slug)
+// PublicFile is a file being served from a drop's own URL.
+type PublicFile struct {
+	FileInfo
+	// Restricted marks a file that answers only to certain accounts, because
+	// the drop it belongs to is private. Whoever serves it has to keep it out
+	// of any cache that could later hand it to somebody else.
+	Restricted bool
+}
+
+// OpenPublicFile serves a drop by slug. An empty relPath resolves to the
+// version's entrypoint; a leading "@<seq>" pins an older snapshot. An actor of
+// zero is an anonymous visitor, who only ever reaches a non-private drop.
+func (s *Service) OpenPublicFile(ctx context.Context, actor uint, slug, relPath string) (io.ReadCloser, PublicFile, error) {
+	node, err := s.publishedDrop(ctx, actor, slug)
 	if err != nil {
-		return nil, FileInfo{}, err
+		return nil, PublicFile{}, err
 	}
 
 	seq, rest, pinned := SplitVersionRef(relPath)
 	version, err := s.resolveVersion(ctx, node, seq, pinned)
 	if err != nil {
-		return nil, FileInfo{}, err
+		return nil, PublicFile{}, err
 	}
 
 	if rest == "" {
@@ -1411,28 +1437,31 @@ func (s *Service) OpenPublicFile(ctx context.Context, slug, relPath string) (io.
 	}
 	clean, err := validFilePath(rest)
 	if err != nil {
-		return nil, FileInfo{}, err
+		return nil, PublicFile{}, err
 	}
 
 	var file model.File
 	err = s.db.WithContext(ctx).
 		Where("version_id = ? AND name = ?", version.ID, clean).First(&file).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, FileInfo{}, ErrNotFound
+		return nil, PublicFile{}, ErrNotFound
 	}
 	if err != nil {
-		return nil, FileInfo{}, err
+		return nil, PublicFile{}, err
 	}
 
 	body, err := s.objects.Get(ctx, file.ObjectKey)
 	if err != nil {
-		return nil, FileInfo{}, err
+		return nil, PublicFile{}, err
 	}
-	return body, FileInfo{
-		Name:        file.Name,
-		Size:        file.Size,
-		ContentType: file.ContentType,
-		ModifiedAt:  file.UpdatedAt.UTC(),
+	return body, PublicFile{
+		FileInfo: FileInfo{
+			Name:        file.Name,
+			Size:        file.Size,
+			ContentType: file.ContentType,
+			ModifiedAt:  file.UpdatedAt.UTC(),
+		},
+		Restricted: node.Visibility == model.VisibilityPrivate,
 	}, nil
 }
 

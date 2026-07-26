@@ -87,6 +87,30 @@ func requireAPIAuth(svc *auth.Service) gin.HandlerFunc {
 	}
 }
 
+// resolveSession attaches the account behind a request when there is one and
+// lets it through anonymous when there is not. It is for the published routes,
+// where being signed in changes what may be served — a private drop opens for
+// the people it belongs to — but is never required to ask.
+//
+// A credential that does not check out is ignored rather than rejected, and the
+// cookie is left alone: a stale one on a published page is not that page's
+// business to clean up, and clearing it would sign the visitor out of the admin
+// as a side effect of loading somebody's site.
+func resolveSession(svc *auth.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if token := bearerToken(c); token != "" {
+			if user, err := svc.UserFromAccessToken(c.Request.Context(), token); err == nil {
+				c.Set(contextUser, user)
+			}
+		} else if cookie, err := c.Cookie(sessionCookie); err == nil && cookie != "" {
+			if user, err := svc.SessionUser(c.Request.Context(), cookie); err == nil {
+				c.Set(contextUser, user)
+			}
+		}
+		c.Next()
+	}
+}
+
 // requireAdminAPI rejects a non-administrator on the JSON endpoints that manage
 // accounts.
 func requireAdminAPI(c *gin.Context) {

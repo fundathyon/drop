@@ -85,9 +85,12 @@ func NewRouter(svc *service.Service, cfg Config) (http.Handler, error) {
 	r.GET("/healthz", h.health)
 
 	// Published drops. The /d/ prefix keeps slugs from colliding with the API,
-	// the docs and the health endpoint.
-	r.GET("/d/:slug", h.servePublicDrop)
-	r.GET("/d/:slug/*filepath", h.servePublicDrop)
+	// the docs and the health endpoint. The session is resolved but not
+	// required: a public drop serves to anyone, and a private one serves to the
+	// accounts that may open it.
+	published := r.Group("/d", resolveSession(cfg.Auth))
+	published.GET("/:slug", h.servePublicDrop)
+	published.GET("/:slug/*filepath", h.servePublicDrop)
 
 	// Getting a token is the one API call that cannot require one. Both are
 	// throttled: they are the two places a password or a token is checked.

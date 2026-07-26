@@ -32,21 +32,26 @@
       <h2 class="section-title">Archivos</h2>
       <span class="badge badge-secondary">v{{.Detail.Meta.Version}}</span>
       <span class="badge badge-secondary">{{.Detail.Meta.Visibility}}</span>
-      {{/* A drop whose entrypoint names nothing it has answers 404 too, and
-           that one has its own notice below. */}}
+      {{/* A drop whose entrypoint names nothing it has answers 404 to
+           everyone, so it is the one case with no link to offer; it has its
+           own notice below. */}}
       {{if not .Detail.EntrypointMissing}}
-        {{if eq .Detail.Meta.Visibility "private"}}
-          {{/* The address is real and worth being able to copy; it just does
-               not answer yet. Shown as text so nobody clicks into a 404. */}}
-          <span class="link link-muted" title="No responde mientras el drop sea privado">
-            {{icon "lock" ""}}{{.Detail.URL}}
-          </span>
-        {{else}}
+        {{$private := eq .Detail.Meta.Visibility "private"}}
+        <span class="link-group">
           <a class="link" href="{{.Detail.URL}}" target="_blank" rel="noopener"
-             title="Abrir el drop publicado">
-            {{icon "external-link" ""}}{{.Detail.URL}}
+             title="{{if $private}}Ábrelo: responde a tu cuenta, no a la de un desconocido{{else}}Abrir el drop publicado{{end}}">
+            {{/* The padlock says the address is yours to open and not the
+                 world's — the difference a visitor would otherwise only find
+                 out by being refused. */}}
+            {{if $private}}{{icon "lock" ""}}{{else}}{{icon "external-link" ""}}{{end}}
+            {{.Detail.URL}}
           </a>
-        {{end}}
+          <button type="button" class="btn btn-ghost btn-icon copy-link" data-copy="{{.Detail.URL}}"
+                  aria-label="Copiar el enlace" title="Copiar el enlace">
+            <span data-copy-idle>{{icon "copy" ""}}</span>
+            <span data-copy-done hidden>{{icon "circle-check" ""}}</span>
+          </button>
+        </span>
       {{end}}
     </div>
 
@@ -54,16 +59,16 @@
       <p class="notice notice-info" role="status">
         {{icon "lock" ""}}
         <span>
-          Este drop es <strong>privado</strong>: su URL responde 404 a todo el
-          mundo, tú incluido.
+          Este drop es <strong>privado</strong>: su URL abre para tu cuenta y
+          para quien lo tengas compartido, y responde 404 a cualquier otra
+          persona, tenga el enlace o no.
           {{if .Detail.Access.CanWrite}}
-            Para que se pueda abrir, cámbialo a <code>unlisted</code> (accesible
-            con el enlace, sin listar) o <code>public</code> desde
-            <strong>Metadata</strong>.
+            Para que lo abra cualquiera que reciba el enlace, cámbialo a
+            <code>unlisted</code> desde <strong>Metadata</strong>; con
+            <code>public</code> además queda a la vista.
           {{else}}
-            Solo quien pueda editarlo puede cambiar eso.
+            Solo quien pueda editarlo puede abrirlo al resto.
           {{end}}
-          Compartirlo desde aquí da acceso al panel, no a la URL pública.
         </span>
       </p>
     {{end}}
@@ -176,11 +181,11 @@
                 <td class="muted" style="width: 11rem">{{formatDate .PublishedAt}}</td>
                 <td class="right" style="width: 12rem">
                   <span class="row-actions">
-                    {{if ne $.Detail.Meta.Visibility "private"}}
-                      <a class="btn btn-ghost btn-sm" href="{{.URL}}" target="_blank" rel="noopener">
-                        {{icon "external-link" ""}}Ver
-                      </a>
-                    {{end}}
+                    {{/* Reachable for whoever is reading this page: a private
+                         drop still opens for the accounts it belongs to. */}}
+                    <a class="btn btn-ghost btn-sm" href="{{.URL}}" target="_blank" rel="noopener">
+                      {{icon "external-link" ""}}Ver
+                    </a>
                     {{if and (not .Current) $.Detail.Access.CanWrite}}
                       <form class="inline-form" method="post" action="/admin/drops/restore"
                             data-confirm-title="¿Volver a publicar la versión {{.Seq}}?"

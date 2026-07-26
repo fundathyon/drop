@@ -292,15 +292,63 @@ func TestDeletingASharedNodeTakesItsGrants(t *testing.T) {
 	}
 }
 
-// TestPublishedDropsIgnoreOwnership: visibility is about the world, ownership
-// is about the admin. Sharing changes neither.
+// TestPublishedDropsIgnoreOwnership: a public drop is public. Who owns it and
+// who it has been shared with have nothing to say about that.
 func TestPublishedDropsIgnoreOwnership(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newTestService(t)
 	seedUsers(t, svc)
 
 	drop := aliceDrop(t, svc, "publico")
-	if _, err := svc.GetDropBySlug(ctx, drop.Meta.Slug); err != nil {
+	if _, err := svc.GetDropBySlug(ctx, anonymous, drop.Meta.Slug); err != nil {
 		t.Fatalf("a public drop is public to everyone, signed in or not: %v", err)
+	}
+	if _, err := svc.GetDropBySlug(ctx, bob, drop.Meta.Slug); err != nil {
+		t.Fatalf("being signed in as someone else must not take a public drop away: %v", err)
+	}
+}
+
+// TestPrivateDropsFollowTheirShares: private is the one visibility where the
+// URL asks who is knocking. It has to answer exactly the people the panel would
+// let in — no wider, and no narrower either, or "private" would mean "broken".
+func TestPrivateDropsFollowTheirShares(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTestService(t)
+	seedUsers(t, svc)
+
+	drop := aliceDrop(t, svc, "secreto")
+	private := model.VisibilityPrivate
+	if _, err := svc.UpdateDropMeta(ctx, alice, Own(drop.Path), DropPatch{Visibility: &private}); err != nil {
+		t.Fatalf("UpdateDropMeta: %v", err)
+	}
+
+	if _, _, err := svc.OpenPublicFile(ctx, alice, drop.Meta.Slug, ""); err != nil {
+		t.Fatalf("alice owns it and must be able to open it: %v", err)
+	}
+
+	// Bob is signed in, which buys him nothing on its own.
+	if _, _, err := svc.OpenPublicFile(ctx, bob, drop.Meta.Slug, ""); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound before the share, got %v", err)
+	}
+
+	if _, err := svc.Share(ctx, alice, Own(drop.Path), bob, AccessViewer); err != nil {
+		t.Fatalf("Share: %v", err)
+	}
+	if _, _, err := svc.OpenPublicFile(ctx, bob, drop.Meta.Slug, ""); err != nil {
+		t.Fatalf("a share has to carry the URL too, or the link is useless to bob: %v", err)
+	}
+
+	// And the door closes again. A revoked share that left the URL working
+	// would be the worst of both worlds: it looks revoked and is not.
+	if err := svc.Unshare(ctx, alice, Own(drop.Path), bob); err != nil {
+		t.Fatalf("Unshare: %v", err)
+	}
+	if _, _, err := svc.OpenPublicFile(ctx, bob, drop.Meta.Slug, ""); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound after the share was revoked, got %v", err)
+	}
+
+	// The passer-by never had a way in at any point.
+	if _, _, err := svc.OpenPublicFile(ctx, anonymous, drop.Meta.Slug, ""); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for an anonymous visitor, got %v", err)
 	}
 }

@@ -96,6 +96,10 @@ func uploaded(files []FileInfo) []FileInfo {
 // there is no such thing as an unattributed one.
 const testUser uint = 1
 
+// anonymous is the visitor with no session, which is who a published URL is
+// mostly asked by.
+const anonymous uint = 0
+
 func newTestService(t *testing.T) (*Service, *fakeStore) {
 	t.Helper()
 	database, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
@@ -403,7 +407,7 @@ func TestOpenPublicFile(t *testing.T) {
 	}
 
 	// No path resolves to the entrypoint, whatever it is called.
-	body, info, err := svc.OpenPublicFile(ctx, slug, "")
+	body, info, err := svc.OpenPublicFile(ctx, anonymous, slug, "")
 	if err != nil {
 		t.Fatalf("OpenPublicFile entrypoint: %v", err)
 	}
@@ -414,7 +418,7 @@ func TestOpenPublicFile(t *testing.T) {
 	}
 
 	// A nested asset is reachable by its relative path.
-	body, _, err = svc.OpenPublicFile(ctx, slug, "assets/app.css")
+	body, _, err = svc.OpenPublicFile(ctx, anonymous, slug, "assets/app.css")
 	if err != nil {
 		t.Fatalf("OpenPublicFile asset: %v", err)
 	}
@@ -425,14 +429,14 @@ func TestOpenPublicFile(t *testing.T) {
 	}
 
 	// Unknown slug and unknown file both 404.
-	if _, _, err := svc.OpenPublicFile(ctx, "nopeXXXX", ""); !errors.Is(err, ErrNotFound) {
+	if _, _, err := svc.OpenPublicFile(ctx, anonymous, "nopeXXXX", ""); !errors.Is(err, ErrNotFound) {
 		t.Errorf("expected ErrNotFound for an unknown slug, got %v", err)
 	}
-	if _, _, err := svc.OpenPublicFile(ctx, slug, "no-existe.css"); !errors.Is(err, ErrNotFound) {
+	if _, _, err := svc.OpenPublicFile(ctx, anonymous, slug, "no-existe.css"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("expected ErrNotFound for an unknown file, got %v", err)
 	}
 	// Traversal cannot escape the drop.
-	if _, _, err := svc.OpenPublicFile(ctx, slug, "../../etc/passwd"); !errors.Is(err, ErrInvalidPath) {
+	if _, _, err := svc.OpenPublicFile(ctx, anonymous, slug, "../../etc/passwd"); !errors.Is(err, ErrInvalidPath) {
 		t.Errorf("expected ErrInvalidPath, got %v", err)
 	}
 }
@@ -514,7 +518,7 @@ func TestUploadingTheSameTitleAgainOpensANewVersion(t *testing.T) {
 	}
 
 	// The drop's own URL serves what was just published...
-	body, _, err := svc.OpenPublicFile(ctx, slug, "")
+	body, _, err := svc.OpenPublicFile(ctx, anonymous, slug, "")
 	if err != nil {
 		t.Fatalf("OpenPublicFile current: %v", err)
 	}
@@ -525,7 +529,7 @@ func TestUploadingTheSameTitleAgainOpensANewVersion(t *testing.T) {
 	}
 
 	// ...and version 1 keeps serving exactly what it published, assets included.
-	body, _, err = svc.OpenPublicFile(ctx, slug, "@1/")
+	body, _, err = svc.OpenPublicFile(ctx, anonymous, slug, "@1/")
 	if err != nil {
 		t.Fatalf("OpenPublicFile @1: %v", err)
 	}
@@ -535,19 +539,19 @@ func TestUploadingTheSameTitleAgainOpensANewVersion(t *testing.T) {
 		t.Errorf("version 1 should be untouched, got %q", data)
 	}
 
-	body, _, err = svc.OpenPublicFile(ctx, slug, "@1/assets/app.css")
+	body, _, err = svc.OpenPublicFile(ctx, anonymous, slug, "@1/assets/app.css")
 	if err != nil {
 		t.Fatalf("version 1 should keep the asset the new version dropped: %v", err)
 	}
 	body.Close()
 
 	// That asset is gone from the current version.
-	if _, _, err := svc.OpenPublicFile(ctx, slug, "assets/app.css"); !errors.Is(err, ErrNotFound) {
+	if _, _, err := svc.OpenPublicFile(ctx, anonymous, slug, "assets/app.css"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("expected the dropped asset to 404 on the current version, got %v", err)
 	}
 
 	// A version that was never published is not a URL.
-	if _, _, err := svc.OpenPublicFile(ctx, slug, "@9/"); !errors.Is(err, ErrNotFound) {
+	if _, _, err := svc.OpenPublicFile(ctx, anonymous, slug, "@9/"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("expected ErrNotFound for an unknown version, got %v", err)
 	}
 }
@@ -613,7 +617,7 @@ func TestActivateVersionRollsBackWithoutLosingHistory(t *testing.T) {
 		t.Fatalf("expected both versions to survive, got %+v", detail.Versions)
 	}
 
-	body, _, err := svc.OpenPublicFile(ctx, first.Meta.Slug, "")
+	body, _, err := svc.OpenPublicFile(ctx, anonymous, first.Meta.Slug, "")
 	if err != nil {
 		t.Fatalf("OpenPublicFile: %v", err)
 	}
@@ -624,7 +628,7 @@ func TestActivateVersionRollsBackWithoutLosingHistory(t *testing.T) {
 	}
 
 	// The newer version is still reachable by its own URL.
-	body, _, err = svc.OpenPublicFile(ctx, first.Meta.Slug, "@2/")
+	body, _, err = svc.OpenPublicFile(ctx, anonymous, first.Meta.Slug, "@2/")
 	if err != nil {
 		t.Fatalf("version 2 should still be reachable: %v", err)
 	}
@@ -678,7 +682,7 @@ func TestRepublishingKeepsVisibilityUnlessAsked(t *testing.T) {
 	if second.Meta.Visibility != model.VisibilityPrivate {
 		t.Fatalf("re-uploading must not reopen a private drop, got %q", second.Meta.Visibility)
 	}
-	if _, _, err := svc.OpenPublicFile(ctx, first.Meta.Slug, ""); !errors.Is(err, ErrNotFound) {
+	if _, _, err := svc.OpenPublicFile(ctx, anonymous, first.Meta.Slug, ""); !errors.Is(err, ErrNotFound) {
 		t.Errorf("the drop should still be hidden, got %v", err)
 	}
 
@@ -761,8 +765,20 @@ func TestOpenPublicFileHidesPrivateDrops(t *testing.T) {
 	}
 
 	// Not 403: a private drop must not confirm that its slug exists.
-	if _, _, err := svc.OpenPublicFile(ctx, detail.Meta.Slug, ""); !errors.Is(err, ErrNotFound) {
+	if _, _, err := svc.OpenPublicFile(ctx, anonymous, detail.Meta.Slug, ""); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound for a private drop, got %v", err)
+	}
+
+	// Its owner is not "everyone else": the address works for whoever the drop
+	// belongs to, which is what makes private a useful state rather than a
+	// broken one.
+	body, info, err := svc.OpenPublicFile(ctx, testUser, detail.Meta.Slug, "")
+	if err != nil {
+		t.Fatalf("the owner should be able to open their own private drop: %v", err)
+	}
+	body.Close()
+	if !info.Restricted {
+		t.Error("a private drop must be flagged restricted so its response is never cached for someone else")
 	}
 
 	// Publishing it makes it reachable without re-uploading anything.
@@ -770,11 +786,14 @@ func TestOpenPublicFileHidesPrivateDrops(t *testing.T) {
 	if _, err := svc.UpdateDropMeta(ctx, testUser, Own(detail.Path), DropPatch{Visibility: &visibility}); err != nil {
 		t.Fatalf("UpdateDropMeta: %v", err)
 	}
-	body, _, err := svc.OpenPublicFile(ctx, detail.Meta.Slug, "")
+	body, info, err = svc.OpenPublicFile(ctx, anonymous, detail.Meta.Slug, "")
 	if err != nil {
 		t.Fatalf("expected the drop to be served once public: %v", err)
 	}
 	body.Close()
+	if info.Restricted {
+		t.Error("a public drop is for everyone; nothing about it needs holding back from caches")
+	}
 }
 
 func TestUploadDropValidation(t *testing.T) {
@@ -925,7 +944,7 @@ func TestAFailedRepublishLeavesThePublishedVersionAlone(t *testing.T) {
 		t.Fatalf("expected to stay on version 1: version=%d history=%+v", detail.Meta.Version, detail.Versions)
 	}
 
-	body, _, err := svc.OpenPublicFile(ctx, first.Meta.Slug, "")
+	body, _, err := svc.OpenPublicFile(ctx, anonymous, first.Meta.Slug, "")
 	if err != nil {
 		t.Fatalf("OpenPublicFile: %v", err)
 	}
