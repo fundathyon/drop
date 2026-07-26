@@ -41,26 +41,53 @@ type Node struct {
 	Path string `gorm:"not null;uniqueIndex;size:1024"`
 	Kind Kind   `gorm:"not null;size:16;index"`
 
-	// Drop-only metadata, mirrored into the drop's ".drop" object.
+	// Drop-only metadata. What the drop *is* lives here; what it *contains*
+	// belongs to a Version, because contents are what a new upload replaces.
 	Title      string     `gorm:"size:255"`
 	Slug       string     `gorm:"size:32;index"`
-	Entrypoint string     `gorm:"size:255"`
 	Visibility Visibility `gorm:"size:16"`
+	// CurrentVersionID is the snapshot served at the drop's public URL. The
+	// older ones stay in the table, each reachable at its own URL.
+	CurrentVersionID *uint `gorm:"index"`
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
 
-	Files []File `gorm:"foreignKey:NodeID;constraint:OnDelete:CASCADE"`
+	Versions []Version `gorm:"foreignKey:NodeID;constraint:OnDelete:CASCADE"`
 }
 
-// File is a single object stored inside a drop. Bytes live in object storage;
-// this row is the index entry.
-type File struct {
+// Version is one published snapshot of a drop's files. Uploading a drop that
+// already exists seals the current snapshot and opens the next one, so what
+// was published before stays reachable exactly as it was.
+type Version struct {
 	ID     uint `gorm:"primaryKey"`
-	NodeID uint `gorm:"not null;uniqueIndex:idx_file_node_name"`
-	// Name is the path relative to the drop's root, so it may contain
+	NodeID uint `gorm:"not null;uniqueIndex:idx_version_node_seq"`
+	// Seq numbers a drop's versions from 1, in publication order.
+	Seq uint `gorm:"not null;uniqueIndex:idx_version_node_seq"`
+	// Entrypoint belongs to the snapshot rather than to the drop: a later
+	// upload may well open a different page.
+	Entrypoint string `gorm:"size:255"`
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
+
+	Files []File `gorm:"foreignKey:VersionID;constraint:OnDelete:CASCADE"`
+}
+
+// File is a single object stored inside one version of a drop. Bytes live in
+// object storage; this row is the index entry.
+type File struct {
+	ID uint `gorm:"primaryKey"`
+	// NodeID is the drop the file belongs to, denormalized so a drop's files
+	// can be found across every version without joining.
+	NodeID uint `gorm:"not null;index"`
+	// VersionID is the snapshot this file is part of. Two versions of the same
+	// drop each have their own "index.html", hence the index on version rather
+	// than on drop.
+	VersionID uint `gorm:"not null;uniqueIndex:idx_file_version_name"`
+	// Name is the path relative to the version's root, so it may contain
 	// subdirectories ("assets/app.css") — hence the generous length.
-	Name string `gorm:"not null;size:1024;uniqueIndex:idx_file_node_name"`
+	Name        string `gorm:"not null;size:1024;uniqueIndex:idx_file_version_name"`
 	Size        int64
 	ContentType string `gorm:"size:255"`
 	// ObjectKey is the key under which the bytes are stored in the bucket.

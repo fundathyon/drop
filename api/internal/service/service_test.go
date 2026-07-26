@@ -168,7 +168,7 @@ func TestDropDescriptorMaterialized(t *testing.T) {
 		t.Fatalf("CreateDrop: %v", err)
 	}
 
-	key := objectKey(drop.Meta.Slug, MetaFileName)
+	key := objectKey(drop.Meta.Slug, drop.Meta.Version, MetaFileName)
 	body, err := store.Get(ctx, key)
 	if err != nil {
 		t.Fatalf("expected %s to exist in storage: %v", key, err)
@@ -291,8 +291,8 @@ func TestUploadDrop(t *testing.T) {
 		t.Errorf("nested round-trip mismatch: %q", got)
 	}
 
-	// Stored under the drop's slug, preserving the subdirectory.
-	wantKey := "drops/" + detail.Meta.Slug + "/assets/app.css"
+	// Stored under the drop's slug and version, preserving the subdirectory.
+	wantKey := "drops/" + detail.Meta.Slug + "/v1/assets/app.css"
 	if _, err := store.Get(ctx, wantKey); err != nil {
 		t.Errorf("expected object at %s: %v", wantKey, err)
 	}
@@ -394,7 +394,7 @@ func TestOpenPublicFile(t *testing.T) {
 	}
 	slug := detail.Meta.Slug
 
-	if detail.URL != "http://localhost:8000/d/"+slug {
+	if detail.URL != "http://localhost:8000/d/"+slug+"/" {
 		t.Fatalf("unexpected public URL: %q", detail.URL)
 	}
 
@@ -465,6 +465,280 @@ func TestContentTypeIsInferredWhenNotDeclared(t *testing.T) {
 	for name, expected := range want {
 		if got[name] != expected {
 			t.Errorf("%s: expected %q, got %q", name, expected, got[name])
+		}
+	}
+}
+
+func TestUploadingTheSameTitleAgainOpensANewVersion(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTestService(t)
+
+	first, err := svc.UploadDrop(ctx, UploadDropInput{
+		Title: "Landing",
+		Files: []UploadFile{
+			uploadFile("index.html", "text/html", "<h1>uno</h1>"),
+			uploadFile("assets/app.css", "text/css", "body{}"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("UploadDrop: %v", err)
+	}
+	if first.Meta.Version != 1 {
+		t.Fatalf("a freshly published drop should be version 1, got %d", first.Meta.Version)
+	}
+	slug := first.Meta.Slug
+
+	// The same title lands on the same drop instead of colliding.
+	second, err := svc.UploadDrop(ctx, UploadDropInput{
+		Title: "Landing",
+		Files: []UploadFile{uploadFile("index.html", "text/html", "<h1>dos</h1>")},
+	})
+	if err != nil {
+		t.Fatalf("re-uploading the same title should publish a new version: %v", err)
+	}
+	if second.Path != first.Path || second.Meta.Slug != slug {
+		t.Fatalf("expected the same drop, got %q (%s)", second.Path, second.Meta.Slug)
+	}
+	if second.Meta.Version != 2 {
+		t.Fatalf("expected version 2, got %d", second.Meta.Version)
+	}
+	if len(second.Versions) != 2 {
+		t.Fatalf("expected two versions in the history, got %+v", second.Versions)
+	}
+	if !second.Versions[0].Current || second.Versions[0].Seq != 2 {
+		t.Errorf("history should be newest first with 2 current: %+v", second.Versions)
+	}
+
+	// The drop's own URL serves what was just published...
+	body, _, err := svc.OpenPublicFile(ctx, slug, "")
+	if err != nil {
+		t.Fatalf("OpenPublicFile current: %v", err)
+	}
+	data, _ := io.ReadAll(body)
+	body.Close()
+	if string(data) != "<h1>dos</h1>" {
+		t.Errorf("the current version should be served, got %q", data)
+	}
+
+	// ...and version 1 keeps serving exactly what it published, assets included.
+	body, _, err = svc.OpenPublicFile(ctx, slug, "@1/")
+	if err != nil {
+		t.Fatalf("OpenPublicFile @1: %v", err)
+	}
+	data, _ = io.ReadAll(body)
+	body.Close()
+	if string(data) != "<h1>uno</h1>" {
+		t.Errorf("version 1 should be untouched, got %q", data)
+	}
+
+	body, _, err = svc.OpenPublicFile(ctx, slug, "@1/assets/app.css")
+	if err != nil {
+		t.Fatalf("version 1 should keep the asset the new version dropped: %v", err)
+	}
+	body.Close()
+
+	// That asset is gone from the current version.
+	if _, _, err := svc.OpenPublicFile(ctx, slug, "assets/app.css"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("expected the dropped asset to 404 on the current version, got %v", err)
+	}
+
+	// A version that was never published is not a URL.
+	if _, _, err := svc.OpenPublicFile(ctx, slug, "@9/"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("expected ErrNotFound for an unknown version, got %v", err)
+	}
+}
+
+func TestEditingFilesDoesNotOpenANewVersion(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTestService(t)
+
+	detail, err := svc.UploadDrop(ctx, UploadDropInput{
+		Title: "Editable",
+		Files: []UploadFile{uploadFile("index.html", "text/html", "<h1>uno</h1>")},
+	})
+	if err != nil {
+		t.Fatalf("UploadDrop: %v", err)
+	}
+
+	// Versions are cut by uploads, not by edits: saving a file in the admin
+	// changes what version 1 contains rather than publishing a version 2.
+	if _, err := svc.SaveFile(ctx, detail.Path, "index.html", strings.NewReader("<h1>dos</h1>"), 12, "text/html"); err != nil {
+		t.Fatalf("SaveFile: %v", err)
+	}
+	title := "Otro título"
+	if _, err := svc.UpdateDropMeta(ctx, detail.Path, DropPatch{Title: &title}); err != nil {
+		t.Fatalf("UpdateDropMeta: %v", err)
+	}
+
+	detail, err = svc.GetDrop(ctx, detail.Path)
+	if err != nil {
+		t.Fatalf("GetDrop: %v", err)
+	}
+	if detail.Meta.Version != 1 || len(detail.Versions) != 1 {
+		t.Fatalf("editing should stay on version 1: version=%d history=%+v", detail.Meta.Version, detail.Versions)
+	}
+}
+
+func TestActivateVersionRollsBackWithoutLosingHistory(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTestService(t)
+
+	first, err := svc.UploadDrop(ctx, UploadDropInput{
+		Title: "Rollback",
+		Files: []UploadFile{uploadFile("index.html", "text/html", "<h1>uno</h1>")},
+	})
+	if err != nil {
+		t.Fatalf("UploadDrop: %v", err)
+	}
+	if _, err := svc.UploadDrop(ctx, UploadDropInput{
+		Title: "Rollback",
+		Files: []UploadFile{uploadFile("index.html", "text/html", "<h1>dos</h1>")},
+	}); err != nil {
+		t.Fatalf("second UploadDrop: %v", err)
+	}
+
+	detail, err := svc.ActivateVersion(ctx, first.Path, 1)
+	if err != nil {
+		t.Fatalf("ActivateVersion: %v", err)
+	}
+	if detail.Meta.Version != 1 {
+		t.Fatalf("expected version 1 to be current, got %d", detail.Meta.Version)
+	}
+	// Rolling back moves a pointer; it does not discard what came after.
+	if len(detail.Versions) != 2 {
+		t.Fatalf("expected both versions to survive, got %+v", detail.Versions)
+	}
+
+	body, _, err := svc.OpenPublicFile(ctx, first.Meta.Slug, "")
+	if err != nil {
+		t.Fatalf("OpenPublicFile: %v", err)
+	}
+	data, _ := io.ReadAll(body)
+	body.Close()
+	if string(data) != "<h1>uno</h1>" {
+		t.Errorf("expected version 1 to be served again, got %q", data)
+	}
+
+	// The newer version is still reachable by its own URL.
+	body, _, err = svc.OpenPublicFile(ctx, first.Meta.Slug, "@2/")
+	if err != nil {
+		t.Fatalf("version 2 should still be reachable: %v", err)
+	}
+	body.Close()
+
+	if _, err := svc.ActivateVersion(ctx, first.Path, 9); !errors.Is(err, ErrNotFound) {
+		t.Errorf("expected ErrNotFound activating an unknown version, got %v", err)
+	}
+}
+
+func TestUploadingOntoAPlainFolderStillCollides(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTestService(t)
+
+	if _, err := svc.CreateFolder(ctx, "", "informes"); err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+	// Versioning applies to drops. A folder of the same name is a real clash.
+	_, err := svc.UploadDrop(ctx, UploadDropInput{
+		Title: "Informes",
+		Name:  "informes",
+		Files: []UploadFile{uploadFile("index.html", "text/html", "x")},
+	})
+	if !errors.Is(err, ErrExists) {
+		t.Fatalf("expected ErrExists, got %v", err)
+	}
+}
+
+func TestRepublishingKeepsVisibilityUnlessAsked(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTestService(t)
+
+	first, err := svc.UploadDrop(ctx, UploadDropInput{
+		Title:      "Privado",
+		Visibility: model.VisibilityPrivate,
+		Files:      []UploadFile{uploadFile("index.html", "text/html", "secreto")},
+	})
+	if err != nil {
+		t.Fatalf("UploadDrop: %v", err)
+	}
+
+	// An upload that says nothing about visibility must not publish a private
+	// drop to the world.
+	second, err := svc.UploadDrop(ctx, UploadDropInput{
+		Title: "Privado",
+		Files: []UploadFile{uploadFile("index.html", "text/html", "sigue siendo secreto")},
+	})
+	if err != nil {
+		t.Fatalf("second UploadDrop: %v", err)
+	}
+	if second.Meta.Visibility != model.VisibilityPrivate {
+		t.Fatalf("re-uploading must not reopen a private drop, got %q", second.Meta.Visibility)
+	}
+	if _, _, err := svc.OpenPublicFile(ctx, first.Meta.Slug, ""); !errors.Is(err, ErrNotFound) {
+		t.Errorf("the drop should still be hidden, got %v", err)
+	}
+
+	// Asking explicitly does change it.
+	third, err := svc.UploadDrop(ctx, UploadDropInput{
+		Title:      "Privado",
+		Visibility: model.VisibilityPublic,
+		Files:      []UploadFile{uploadFile("index.html", "text/html", "ya público")},
+	})
+	if err != nil {
+		t.Fatalf("third UploadDrop: %v", err)
+	}
+	if third.Meta.Visibility != model.VisibilityPublic {
+		t.Fatalf("expected public, got %q", third.Meta.Visibility)
+	}
+}
+
+func TestDescriptorSizeMatchesItsBytes(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTestService(t)
+
+	detail, err := svc.UploadDrop(ctx, UploadDropInput{
+		Title: "Descriptor",
+		Files: []UploadFile{
+			uploadFile("index.html", "text/html", "<h1>hola</h1>"),
+			uploadFile("assets/app.css", "text/css", "body{}"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("UploadDrop: %v", err)
+	}
+
+	// The listed size and the served bytes must come from the same render: when
+	// they drifted, the reported Content-Length outran the body and every
+	// download of the descriptor was truncated.
+	var listed FileInfo
+	for _, f := range detail.Files {
+		if f.Name == MetaFileName {
+			listed = f
+		}
+	}
+	if listed.Name == "" {
+		t.Fatal("the descriptor should be listed")
+	}
+
+	body, info, err := svc.OpenFile(ctx, detail.Path+"/"+MetaFileName)
+	if err != nil {
+		t.Fatalf("OpenFile descriptor: %v", err)
+	}
+	data, _ := io.ReadAll(body)
+	body.Close()
+
+	if info.Size != int64(len(data)) {
+		t.Errorf("descriptor reports %d bytes but served %d", info.Size, len(data))
+	}
+	if listed.Size != int64(len(data)) {
+		t.Errorf("listing reports %d bytes but the descriptor is %d", listed.Size, len(data))
+	}
+
+	// It describes the version it belongs to, contents included, so a bundle
+	// pulled straight out of storage still makes sense on its own.
+	for _, want := range []string{"version: 1", "entrypoint: index.html", "path: assets/app.css"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("descriptor missing %q:\n%s", want, data)
 		}
 	}
 }
@@ -544,6 +818,14 @@ func TestUploadDropValidation(t *testing.T) {
 			want: ErrInvalidPath,
 		},
 		{
+			name: "a path that would shadow a version reference",
+			input: UploadDropInput{
+				Title: "Arroba",
+				Files: []UploadFile{uploadFile("@2/index.html", "text/html", "x")},
+			},
+			want: ErrInvalidPath,
+		},
+		{
 			name: "duplicate paths",
 			input: UploadDropInput{
 				Title: "Duplicado",
@@ -601,6 +883,58 @@ func TestUploadDropRollsBackOnStorageFailure(t *testing.T) {
 	}
 	if keys := store.keys(); len(keys) != 0 {
 		t.Fatalf("expected storage to be cleaned, got %v", keys)
+	}
+}
+
+func TestAFailedRepublishLeavesThePublishedVersionAlone(t *testing.T) {
+	ctx := context.Background()
+	svc, store := newTestService(t)
+
+	first, err := svc.UploadDrop(ctx, UploadDropInput{
+		Title: "Estable",
+		Files: []UploadFile{uploadFile("index.html", "text/html", "<h1>publicado</h1>")},
+	})
+	if err != nil {
+		t.Fatalf("UploadDrop: %v", err)
+	}
+
+	// Fail the second file of the new version, once the first already landed.
+	store.failOn = "roto.css"
+	if _, err := svc.UploadDrop(ctx, UploadDropInput{
+		Title: "Estable",
+		Files: []UploadFile{
+			uploadFile("index.html", "text/html", "<h1>a medias</h1>"),
+			uploadFile("roto.css", "text/css", "body{}"),
+		},
+	}); err == nil {
+		t.Fatal("expected the upload to fail")
+	}
+	store.failOn = ""
+
+	// The drop keeps serving what it was serving, and the half-written version
+	// left nothing behind — neither a row nor an object.
+	detail, err := svc.GetDrop(ctx, first.Path)
+	if err != nil {
+		t.Fatalf("GetDrop: %v", err)
+	}
+	if detail.Meta.Version != 1 || len(detail.Versions) != 1 {
+		t.Fatalf("expected to stay on version 1: version=%d history=%+v", detail.Meta.Version, detail.Versions)
+	}
+
+	body, _, err := svc.OpenPublicFile(ctx, first.Meta.Slug, "")
+	if err != nil {
+		t.Fatalf("OpenPublicFile: %v", err)
+	}
+	data, _ := io.ReadAll(body)
+	body.Close()
+	if string(data) != "<h1>publicado</h1>" {
+		t.Errorf("the published version should be untouched, got %q", data)
+	}
+
+	for _, key := range store.keys() {
+		if strings.Contains(key, "/v2/") {
+			t.Errorf("the discarded version left %s behind", key)
+		}
 	}
 }
 

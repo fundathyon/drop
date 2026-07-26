@@ -1,7 +1,7 @@
 // Package service implements the admin tree: folders, drops, and the files a
 // drop is composed of. Metadata lives in the relational store; file bytes live
 // in object storage, alongside a materialized ".drop" YAML descriptor that
-// keeps each drop self-describing.
+// keeps each published snapshot self-describing.
 package service
 
 import (
@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -62,9 +63,15 @@ func New(db *gorm.DB, store ObjectStore, publicBaseURL string) *Service {
 // of the way of /v1, /docs and /healthz.
 const PublicPathPrefix = "/d/"
 
-// publicURL is the address a drop can be opened at.
+// publicURL is the address a drop can be opened at: always the current version.
 func (s *Service) publicURL(slug string) string {
-	return s.publicBaseURL + PublicPathPrefix + slug
+	return s.publicBaseURL + PublicPathPrefix + slug + "/"
+}
+
+// versionURL pins a specific snapshot, so a link handed out today keeps showing
+// what it showed today even after the drop is republished.
+func (s *Service) versionURL(slug string, seq uint) string {
+	return s.publicURL(slug) + VersionRefPrefix + strconv.FormatUint(uint64(seq), 10) + "/"
 }
 
 // ---------- API-facing representations ----------
@@ -76,14 +83,30 @@ type Node struct {
 	Kind model.Kind `json:"kind" enums:"folder,drop" example:"drop"`
 }
 
-// DropMeta is the metadata stored in a drop's ".drop" file.
+// DropMeta is a drop's metadata as the API reports it.
 type DropMeta struct {
-	Title      string           `json:"title" yaml:"title" example:"Arquitectura del sistema"`
-	Slug       string           `json:"slug" yaml:"slug" example:"An1UHNyp"`
-	Entrypoint string           `json:"entrypoint" yaml:"entrypoint" example:"index.html"`
-	Visibility model.Visibility `json:"visibility" yaml:"visibility" enums:"public,unlisted,private" example:"public"`
-	CreatedAt  time.Time        `json:"created_at" yaml:"created_at"`
-	UpdatedAt  time.Time        `json:"updated_at" yaml:"updated_at"`
+	Title      string           `json:"title" example:"Arquitectura del sistema"`
+	Slug       string           `json:"slug" example:"An1UHNyp"`
+	Entrypoint string           `json:"entrypoint" example:"index.html"`
+	Visibility model.Visibility `json:"visibility" enums:"public,unlisted,private" example:"public"`
+	// Version is the sequence number of the snapshot currently published: 1 on
+	// first upload, and one more each time the drop is uploaded again.
+	Version   uint      `json:"version" example:"3"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// VersionInfo is one entry of a drop's history.
+type VersionInfo struct {
+	Seq        uint   `json:"seq" example:"2"`
+	Entrypoint string `json:"entrypoint" example:"index.html"`
+	Files      int    `json:"files" example:"3"`
+	Size       int64  `json:"size" example:"20480"`
+	// Current marks the version served at the drop's own URL.
+	Current bool `json:"current" example:"true"`
+	// URL pins this snapshot, and keeps working after later uploads.
+	URL         string    `json:"url" example:"http://localhost:8000/d/An1UHNyp/@2/"`
+	PublishedAt time.Time `json:"published_at"`
 }
 
 // FileInfo describes one file stored inside a drop.
@@ -97,14 +120,16 @@ type FileInfo struct {
 	Generated bool `json:"generated" example:"false"`
 }
 
-// DropDetail is a drop's identity, metadata, and file listing.
+// DropDetail is a drop's identity, metadata, current file listing and history.
 type DropDetail struct {
 	Node
 	// URL is where the drop can be opened. Serving it is subject to
 	// visibility: a private drop answers 404 there.
-	URL   string     `json:"url" example:"http://localhost:8000/d/An1UHNyp"`
+	URL   string     `json:"url" example:"http://localhost:8000/d/An1UHNyp/"`
 	Meta  DropMeta   `json:"meta"`
 	Files []FileInfo `json:"files"`
+	// Versions is the publication history, newest first.
+	Versions []VersionInfo `json:"versions"`
 }
 
 // DropInput carries the fields accepted when creating a drop.
@@ -126,9 +151,16 @@ type DropPatch struct {
 // ---------- object layout ----------
 
 // A drop's objects are keyed by its slug, so renaming or moving a drop never
-// rewrites storage.
-func dropPrefix(slug string) string      { return "drops/" + slug + "/" }
-func objectKey(slug, name string) string { return dropPrefix(slug) + name }
+// rewrites storage; the version segment keeps each snapshot's files apart.
+func dropPrefix(slug string) string { return "drops/" + slug + "/" }
+
+func versionPrefix(slug string, seq uint) string {
+	return dropPrefix(slug) + "v" + strconv.FormatUint(uint64(seq), 10) + "/"
+}
+
+func objectKey(slug string, seq uint, name string) string {
+	return versionPrefix(slug, seq) + name
+}
 
 // ---------- reads ----------
 
@@ -177,39 +209,138 @@ func (s *Service) List(ctx context.Context, path string) ([]Node, error) {
 	return nodes, nil
 }
 
-// GetDrop returns a drop's metadata and the files it is composed of.
+// GetDrop returns a drop's metadata, the files of its current version, and its
+// publication history.
 func (s *Service) GetDrop(ctx context.Context, path string) (DropDetail, error) {
-	path, err := cleanPath(path)
+	node, err := s.dropByPath(ctx, path)
 	if err != nil {
 		return DropDetail{}, err
-	}
-	if path == "" {
-		return DropDetail{}, ErrNotDrop
-	}
-	node, err := s.nodeByPath(ctx, path)
-	if err != nil {
-		return DropDetail{}, err
-	}
-	if node.Kind != model.KindDrop {
-		return DropDetail{}, ErrNotDrop
 	}
 	return s.detail(ctx, node)
 }
 
-func (s *Service) detail(ctx context.Context, node *model.Node) (DropDetail, error) {
+func (s *Service) dropByPath(ctx context.Context, path string) (*model.Node, error) {
+	path, err := cleanPath(path)
+	if err != nil {
+		return nil, err
+	}
+	if path == "" {
+		return nil, ErrNotDrop
+	}
+	node, err := s.nodeByPath(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	if node.Kind != model.KindDrop {
+		return nil, ErrNotDrop
+	}
+	return node, nil
+}
+
+// currentVersion loads the snapshot a drop currently publishes. Every drop has
+// one from the moment it is created, so a missing row is a broken invariant
+// rather than an expected state.
+func (s *Service) currentVersion(ctx context.Context, node *model.Node) (*model.Version, error) {
+	if node.CurrentVersionID == nil {
+		return nil, fmt.Errorf("drop %q has no current version", node.Path)
+	}
+	var v model.Version
+	err := s.db.WithContext(ctx).Where("id = ?", *node.CurrentVersionID).First(&v).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("drop %q points at a missing version", node.Path)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &v, nil
+}
+
+func (s *Service) versionBySeq(ctx context.Context, nodeID, seq uint) (*model.Version, error) {
+	var v model.Version
+	err := s.db.WithContext(ctx).Where("node_id = ? AND seq = ?", nodeID, seq).First(&v).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &v, nil
+}
+
+func (s *Service) filesOf(ctx context.Context, versionID uint) ([]model.File, error) {
 	var files []model.File
-	if err := s.db.WithContext(ctx).Where("node_id = ?", node.ID).Order("name").Find(&files).Error; err != nil {
+	err := s.db.WithContext(ctx).Where("version_id = ?", versionID).Order("name").Find(&files).Error
+	return files, err
+}
+
+// history lists a drop's versions, newest first.
+func (s *Service) history(ctx context.Context, node *model.Node) ([]VersionInfo, error) {
+	var versions []model.Version
+	if err := s.db.WithContext(ctx).
+		Where("node_id = ?", node.ID).Order("seq DESC").Find(&versions).Error; err != nil {
+		return nil, err
+	}
+
+	// One aggregate for the whole history instead of a query per version.
+	type totals struct {
+		VersionID uint
+		Files     int
+		Size      int64
+	}
+	var rows []totals
+	if err := s.db.WithContext(ctx).Model(&model.File{}).
+		Select("version_id, COUNT(*) AS files, COALESCE(SUM(size), 0) AS size").
+		Where("node_id = ?", node.ID).Group("version_id").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	byVersion := make(map[uint]totals, len(rows))
+	for _, r := range rows {
+		byVersion[r.VersionID] = r
+	}
+
+	out := make([]VersionInfo, 0, len(versions))
+	for _, v := range versions {
+		t := byVersion[v.ID]
+		out = append(out, VersionInfo{
+			Seq:         v.Seq,
+			Entrypoint:  v.Entrypoint,
+			Files:       t.Files,
+			Size:        t.Size,
+			Current:     node.CurrentVersionID != nil && *node.CurrentVersionID == v.ID,
+			URL:         s.versionURL(node.Slug, v.Seq),
+			PublishedAt: v.CreatedAt.UTC(),
+		})
+	}
+	return out, nil
+}
+
+// ListVersions returns a drop's publication history, newest first.
+func (s *Service) ListVersions(ctx context.Context, path string) ([]VersionInfo, error) {
+	node, err := s.dropByPath(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	return s.history(ctx, node)
+}
+
+func (s *Service) detail(ctx context.Context, node *model.Node) (DropDetail, error) {
+	version, err := s.currentVersion(ctx, node)
+	if err != nil {
+		return DropDetail{}, err
+	}
+	files, err := s.filesOf(ctx, version.ID)
+	if err != nil {
 		return DropDetail{}, err
 	}
 
 	// The descriptor is listed first: it is part of the drop as stored, even
 	// though it has no row of its own.
 	infos := make([]FileInfo, 0, len(files)+1)
-	meta, err := s.metaFileInfo(node)
+	descriptor, err := s.descriptorInfo(node, version, files)
 	if err != nil {
 		return DropDetail{}, err
 	}
-	infos = append(infos, meta)
+	infos = append(infos, descriptor)
 
 	for _, f := range files {
 		infos = append(infos, FileInfo{
@@ -220,37 +351,27 @@ func (s *Service) detail(ctx context.Context, node *model.Node) (DropDetail, err
 		})
 	}
 
-	return DropDetail{
-		Node:  Node{Name: node.Name, Path: node.Path, Kind: node.Kind},
-		URL:   s.publicURL(node.Slug),
-		Meta:  metaOf(node),
-		Files: infos,
-	}, nil
-}
-
-// metaFileInfo describes the ".drop" descriptor as it appears in a listing.
-// Its size is the YAML that writeMeta would produce, so the number shown is
-// the number of bytes actually stored.
-func (s *Service) metaFileInfo(node *model.Node) (FileInfo, error) {
-	payload, err := yaml.Marshal(metaOf(node))
+	versions, err := s.history(ctx, node)
 	if err != nil {
-		return FileInfo{}, err
+		return DropDetail{}, err
 	}
-	return FileInfo{
-		Name:        MetaFileName,
-		Size:        int64(len(payload)),
-		ContentType: "application/yaml",
-		ModifiedAt:  node.UpdatedAt.UTC(),
-		Generated:   true,
+
+	return DropDetail{
+		Node:     Node{Name: node.Name, Path: node.Path, Kind: node.Kind},
+		URL:      s.publicURL(node.Slug),
+		Meta:     metaOf(node, version),
+		Files:    infos,
+		Versions: versions,
 	}, nil
 }
 
-func metaOf(n *model.Node) DropMeta {
+func metaOf(n *model.Node, v *model.Version) DropMeta {
 	return DropMeta{
 		Title:      n.Title,
 		Slug:       n.Slug,
-		Entrypoint: n.Entrypoint,
+		Entrypoint: v.Entrypoint,
 		Visibility: n.Visibility,
+		Version:    v.Seq,
 		CreatedAt:  n.CreatedAt.UTC(),
 		UpdatedAt:  n.UpdatedAt.UTC(),
 	}
@@ -325,7 +446,7 @@ type UploadFile struct {
 	Open        func() (io.ReadCloser, error)
 }
 
-// UploadDropInput creates a drop and its files in one call.
+// UploadDropInput publishes a drop and its files in one call.
 type UploadDropInput struct {
 	Parent     string
 	Name       string
@@ -335,10 +456,14 @@ type UploadDropInput struct {
 	Files      []UploadFile
 }
 
-// UploadDrop creates a drop together with its files. Everything is validated
-// up front — paths, entrypoint, name collision — so a bad request fails before
-// any byte is stored; and if a later upload fails, the whole drop is removed
-// rather than left half-published.
+// UploadDrop publishes a bundle of files. Uploading to a drop that already
+// exists does not overwrite it: the files land in a new version, and the one
+// published until then stays reachable at its own URL.
+//
+// Everything is validated up front — paths, entrypoint, destination — so a bad
+// request fails before any byte is stored; and if a file fails midway, the
+// half-written version is removed and the drop keeps publishing what it did
+// before.
 func (s *Service) UploadDrop(ctx context.Context, in UploadDropInput) (DropDetail, error) {
 	if len(in.Files) == 0 {
 		return DropDetail{}, fmt.Errorf("%w: at least one file is required", ErrInvalidPath)
@@ -348,6 +473,9 @@ func (s *Service) UploadDrop(ctx context.Context, in UploadDropInput) (DropDetai
 	}
 	if in.Name == "" {
 		in.Name = slugifyName(in.Title)
+	}
+	if err := validName(in.Name); err != nil {
+		return DropDetail{}, err
 	}
 
 	// Normalize every file path before touching storage.
@@ -388,29 +516,154 @@ func (s *Service) UploadDrop(ctx context.Context, in UploadDropInput) (DropDetai
 		in.Entrypoint = entrypoint
 	}
 
-	detail, err := s.CreateDrop(ctx, DropInput{
-		Parent:     in.Parent,
-		Name:       in.Name,
-		Title:      in.Title,
-		Visibility: in.Visibility,
-		Entrypoint: in.Entrypoint,
-	})
+	if in.Visibility != "" && !in.Visibility.Valid() {
+		return DropDetail{}, ErrInvalidVisibility
+	}
+
+	parentNode, parentPath, err := s.resolveParent(ctx, in.Parent)
 	if err != nil {
+		return DropDetail{}, err
+	}
+	path := joinPath(parentPath, in.Name)
+
+	// A drop already at this path is republished rather than rejected; a plain
+	// folder there is a genuine collision.
+	node, err := s.nodeByPath(ctx, path)
+	// A drop this call created has nothing worth keeping if the upload fails —
+	// unlike one that was already publishing something.
+	created := errors.Is(err, ErrNotFound)
+	switch {
+	case created:
+		visibility := in.Visibility
+		if visibility == "" {
+			visibility = model.VisibilityPublic
+		}
+		node = &model.Node{
+			Name:       in.Name,
+			Path:       path,
+			Kind:       model.KindDrop,
+			Title:      in.Title,
+			Visibility: visibility,
+		}
+		if node.Slug, err = newSlug(); err != nil {
+			return DropDetail{}, err
+		}
+		if parentNode != nil {
+			node.ParentID = &parentNode.ID
+		}
+		if err := s.db.WithContext(ctx).Create(node).Error; err != nil {
+			return DropDetail{}, err
+		}
+	case err != nil:
+		return DropDetail{}, err
+	case node.Kind != model.KindDrop:
+		return DropDetail{}, ErrExists
+	default:
+		// Republishing carries the new title over. Visibility only changes when
+		// the caller says so: silently reopening a private drop would be a leak.
+		updates := map[string]any{"title": in.Title}
+		node.Title = in.Title
+		if in.Visibility != "" {
+			updates["visibility"] = in.Visibility
+			node.Visibility = in.Visibility
+		}
+		if err := s.db.WithContext(ctx).Model(node).Updates(updates).Error; err != nil {
+			return DropDetail{}, err
+		}
+	}
+
+	version, err := s.openVersion(ctx, node, in.Entrypoint)
+	if err != nil {
+		if created {
+			s.db.WithContext(ctx).Delete(node)
+		}
 		return DropDetail{}, err
 	}
 
 	for _, f := range normalized {
-		if err := s.storeUploadedFile(ctx, detail.Path, f); err != nil {
-			// Undo the whole drop: a partially uploaded bundle is worse than
-			// none, because its entrypoint may reference files that never landed.
-			if delErr := s.Delete(ctx, detail.Path); delErr != nil {
+		if err := s.storeUploadedFile(ctx, node, version, f); err != nil {
+			// Undo the half-written version. A partially uploaded bundle is
+			// worse than none, because its entrypoint may reference files that
+			// never landed — and a drop that was already publishing something
+			// keeps serving it.
+			if delErr := s.discardVersion(ctx, node, version); delErr != nil {
 				return DropDetail{}, fmt.Errorf("%w (rollback also failed: %v)", err, delErr)
+			}
+			if created {
+				// Nothing was ever published here, so the empty drop goes too.
+				if delErr := s.Delete(ctx, node.Path); delErr != nil {
+					return DropDetail{}, fmt.Errorf("%w (rollback also failed: %v)", err, delErr)
+				}
 			}
 			return DropDetail{}, err
 		}
 	}
 
-	return s.GetDrop(ctx, detail.Path)
+	if err := s.publishVersion(ctx, node, version); err != nil {
+		return DropDetail{}, err
+	}
+	return s.detail(ctx, node)
+}
+
+// openVersion starts the next snapshot of a drop. It is not published until
+// every file has landed.
+func (s *Service) openVersion(ctx context.Context, node *model.Node, entrypoint string) (*model.Version, error) {
+	var last model.Version
+	err := s.db.WithContext(ctx).Where("node_id = ?", node.ID).Order("seq DESC").First(&last).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	version := &model.Version{NodeID: node.ID, Seq: last.Seq + 1, Entrypoint: entrypoint}
+	if err := s.db.WithContext(ctx).Create(version).Error; err != nil {
+		return nil, err
+	}
+	return version, nil
+}
+
+// publishVersion points the drop at a finished snapshot and refreshes its
+// descriptor.
+func (s *Service) publishVersion(ctx context.Context, node *model.Node, version *model.Version) error {
+	now := time.Now().UTC()
+	if err := s.db.WithContext(ctx).Model(node).Updates(map[string]any{
+		"current_version_id": version.ID,
+		"updated_at":         now,
+	}).Error; err != nil {
+		return err
+	}
+	node.CurrentVersionID = &version.ID
+	node.UpdatedAt = now
+	return s.writeMeta(ctx, node, version)
+}
+
+// discardVersion removes a snapshot that never finished uploading.
+func (s *Service) discardVersion(ctx context.Context, node *model.Node, version *model.Version) error {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("version_id = ?", version.ID).Delete(&model.File{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(version).Error
+	}); err != nil {
+		return err
+	}
+	return s.objects.DeletePrefix(ctx, versionPrefix(node.Slug, version.Seq))
+}
+
+// ActivateVersion republishes an earlier snapshot. The history is untouched:
+// rolling back only moves which version the drop's URL resolves to.
+func (s *Service) ActivateVersion(ctx context.Context, path string, seq uint) (DropDetail, error) {
+	node, err := s.dropByPath(ctx, path)
+	if err != nil {
+		return DropDetail{}, err
+	}
+	version, err := s.versionBySeq(ctx, node.ID, seq)
+	if err != nil {
+		return DropDetail{}, err
+	}
+	if err := s.publishVersion(ctx, node, version); err != nil {
+		return DropDetail{}, err
+	}
+	return s.detail(ctx, node)
 }
 
 func isHTML(p string) bool {
@@ -456,18 +709,18 @@ func inferEntrypoint(paths []string) (string, error) {
 		ErrEntrypointMissing, strings.Join(htmls, ", "))
 }
 
-func (s *Service) storeUploadedFile(ctx context.Context, dropPath string, f UploadFile) error {
+func (s *Service) storeUploadedFile(ctx context.Context, node *model.Node, version *model.Version, f UploadFile) error {
 	body, err := f.Open()
 	if err != nil {
 		return err
 	}
 	defer body.Close()
-	_, err = s.SaveFile(ctx, dropPath, f.Path, body, f.Size, f.ContentType)
+	_, err = s.saveFile(ctx, node, version, f.Path, body, f.Size, f.ContentType)
 	return err
 }
 
-// CreateDrop creates a drop: a node carrying metadata, plus its ".drop"
-// descriptor in object storage.
+// CreateDrop creates an empty drop: a node carrying metadata, its first
+// version, and the ".drop" descriptor in object storage.
 func (s *Service) CreateDrop(ctx context.Context, in DropInput) (DropDetail, error) {
 	if err := validName(in.Name); err != nil {
 		return DropDetail{}, err
@@ -510,7 +763,6 @@ func (s *Service) CreateDrop(ctx context.Context, in DropInput) (DropDetail, err
 		Kind:       model.KindDrop,
 		Title:      in.Title,
 		Slug:       slug,
-		Entrypoint: in.Entrypoint,
 		Visibility: in.Visibility,
 	}
 	if parentNode != nil {
@@ -520,9 +772,15 @@ func (s *Service) CreateDrop(ctx context.Context, in DropInput) (DropDetail, err
 		return DropDetail{}, err
 	}
 
-	if err := s.writeMeta(ctx, &node); err != nil {
-		// Roll back the row so a storage outage cannot leave a drop whose
+	version, err := s.openVersion(ctx, &node, in.Entrypoint)
+	if err != nil {
+		s.db.WithContext(ctx).Delete(&node)
+		return DropDetail{}, err
+	}
+	if err := s.publishVersion(ctx, &node, version); err != nil {
+		// Roll back the rows so a storage outage cannot leave a drop whose
 		// descriptor was never written.
+		s.db.WithContext(ctx).Delete(version)
 		s.db.WithContext(ctx).Delete(&node)
 		return DropDetail{}, err
 	}
@@ -530,28 +788,21 @@ func (s *Service) CreateDrop(ctx context.Context, in DropInput) (DropDetail, err
 	return s.detail(ctx, &node)
 }
 
-// UpdateDropMeta patches a drop's metadata and refreshes its descriptor.
+// UpdateDropMeta patches a drop's metadata and refreshes its descriptor. Only
+// the current version is affected; sealed ones keep the entrypoint they were
+// published with.
 func (s *Service) UpdateDropMeta(ctx context.Context, path string, patch DropPatch) (DropDetail, error) {
-	path, err := cleanPath(path)
+	node, err := s.dropByPath(ctx, path)
 	if err != nil {
 		return DropDetail{}, err
 	}
-	if path == "" {
-		return DropDetail{}, ErrNotDrop
-	}
-	node, err := s.nodeByPath(ctx, path)
+	version, err := s.currentVersion(ctx, node)
 	if err != nil {
 		return DropDetail{}, err
-	}
-	if node.Kind != model.KindDrop {
-		return DropDetail{}, ErrNotDrop
 	}
 
 	if patch.Title != nil {
 		node.Title = *patch.Title
-	}
-	if patch.Entrypoint != nil {
-		node.Entrypoint = *patch.Entrypoint
 	}
 	if patch.Visibility != nil {
 		if !patch.Visibility.Valid() {
@@ -559,18 +810,29 @@ func (s *Service) UpdateDropMeta(ctx context.Context, path string, patch DropPat
 		}
 		node.Visibility = *patch.Visibility
 	}
-
 	if err := s.db.WithContext(ctx).Save(node).Error; err != nil {
 		return DropDetail{}, err
 	}
-	if err := s.writeMeta(ctx, node); err != nil {
+
+	if patch.Entrypoint != nil {
+		entrypoint, err := validFilePath(*patch.Entrypoint)
+		if err != nil {
+			return DropDetail{}, err
+		}
+		version.Entrypoint = entrypoint
+		if err := s.db.WithContext(ctx).Model(version).Update("entrypoint", entrypoint).Error; err != nil {
+			return DropDetail{}, err
+		}
+	}
+
+	if err := s.writeMeta(ctx, node, version); err != nil {
 		return DropDetail{}, err
 	}
 	return s.detail(ctx, node)
 }
 
-// Delete removes a folder or drop and everything beneath it, including the
-// stored objects of every drop in the subtree.
+// Delete removes a folder or drop and everything beneath it, including every
+// version of every drop in the subtree.
 func (s *Service) Delete(ctx context.Context, path string) error {
 	path, err := cleanPath(path)
 	if err != nil {
@@ -600,6 +862,9 @@ func (s *Service) Delete(ctx context.Context, path string) error {
 		if err := tx.Where("node_id IN ?", ids).Delete(&model.File{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("node_id IN ?", ids).Delete(&model.Version{}).Error; err != nil {
+			return err
+		}
 		return tx.Where("id IN ?", ids).Delete(&model.Node{}).Error
 	}); err != nil {
 		return err
@@ -620,37 +885,49 @@ func (s *Service) Delete(ctx context.Context, path string) error {
 
 // ---------- files ----------
 
-// SaveFile stores an uploaded file inside a drop, replacing any file of the
-// same name.
+// SaveFile stores a file in the drop's current version, replacing any file of
+// the same name. Earlier versions are never rewritten.
 func (s *Service) SaveFile(ctx context.Context, dropPath, filename string, r io.Reader, size int64, contentType string) (FileInfo, error) {
+	node, err := s.dropByPath(ctx, dropPath)
+	if err != nil {
+		return FileInfo{}, err
+	}
+	version, err := s.currentVersion(ctx, node)
+	if err != nil {
+		return FileInfo{}, err
+	}
+
+	info, err := s.saveFile(ctx, node, version, filename, r, size, contentType)
+	if err != nil {
+		return FileInfo{}, err
+	}
+	if err := s.touch(ctx, node, version); err != nil {
+		return FileInfo{}, err
+	}
+	return info, nil
+}
+
+// saveFile does the storing without touching the drop, so an upload of many
+// files rewrites the descriptor once instead of once per file.
+func (s *Service) saveFile(ctx context.Context, node *model.Node, version *model.Version, filename string, r io.Reader, size int64, contentType string) (FileInfo, error) {
 	filename, err := validFilePath(filename)
 	if err != nil {
 		return FileInfo{}, err
 	}
-	dropPath, err = cleanPath(dropPath)
-	if err != nil {
-		return FileInfo{}, err
-	}
-	node, err := s.nodeByPath(ctx, dropPath)
-	if err != nil {
-		return FileInfo{}, err
-	}
-	if node.Kind != model.KindDrop {
-		return FileInfo{}, ErrNotDrop
-	}
 
 	contentType = resolveContentType(filename, contentType)
-	key := objectKey(node.Slug, filename)
+	key := objectKey(node.Slug, version.Seq, filename)
 	if err := s.objects.Put(ctx, key, r, size, contentType); err != nil {
 		return FileInfo{}, err
 	}
 
 	var file model.File
-	err = s.db.WithContext(ctx).Where("node_id = ? AND name = ?", node.ID, filename).First(&file).Error
+	err = s.db.WithContext(ctx).Where("version_id = ? AND name = ?", version.ID, filename).First(&file).Error
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		file = model.File{
 			NodeID:      node.ID,
+			VersionID:   version.ID,
 			Name:        filename,
 			Size:        size,
 			ContentType: contentType,
@@ -670,10 +947,6 @@ func (s *Service) SaveFile(ctx context.Context, dropPath, filename string, r io.
 		}
 	}
 
-	if err := s.touch(ctx, node); err != nil {
-		return FileInfo{}, err
-	}
-
 	return FileInfo{
 		Name:        file.Name,
 		Size:        file.Size,
@@ -686,24 +959,33 @@ func (s *Service) SaveFile(ctx context.Context, dropPath, filename string, r io.
 // descriptor is readable here even though it is not writable: it is part of
 // what the drop stores, so it should be inspectable.
 func (s *Service) OpenFile(ctx context.Context, path string) (io.ReadCloser, FileInfo, error) {
-	if node, ok, err := s.descriptorTarget(ctx, path); err != nil {
-		return nil, FileInfo{}, err
-	} else if ok {
-		info, err := s.metaFileInfo(node)
-		if err != nil {
-			return nil, FileInfo{}, err
-		}
-		body, err := s.objects.Get(ctx, objectKey(node.Slug, MetaFileName))
-		if err != nil {
-			return nil, FileInfo{}, err
-		}
-		return body, info, nil
-	}
-
-	file, _, err := s.lookupFile(ctx, path)
+	node, version, rel, err := s.resolveFileLocation(ctx, path)
 	if err != nil {
 		return nil, FileInfo{}, err
 	}
+
+	if rel == MetaFileName {
+		files, err := s.filesOf(ctx, version.ID)
+		if err != nil {
+			return nil, FileInfo{}, err
+		}
+		payload, err := s.descriptorBytes(node, version, files)
+		if err != nil {
+			return nil, FileInfo{}, err
+		}
+		return io.NopCloser(bytes.NewReader(payload)), descriptorFileInfo(version, payload), nil
+	}
+
+	var file model.File
+	err = s.db.WithContext(ctx).
+		Where("version_id = ? AND name = ?", version.ID, rel).First(&file).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, FileInfo{}, ErrNotFound
+	}
+	if err != nil {
+		return nil, FileInfo{}, err
+	}
+
 	body, err := s.objects.Get(ctx, file.ObjectKey)
 	if err != nil {
 		return nil, FileInfo{}, err
@@ -716,34 +998,117 @@ func (s *Service) OpenFile(ctx context.Context, path string) (io.ReadCloser, Fil
 	}, nil
 }
 
-// OpenPublicFile serves a published drop by slug. An empty relPath resolves to
-// the drop's entrypoint. Private drops answer ErrNotFound rather than a 403, so
-// the response does not reveal that the slug exists.
-func (s *Service) OpenPublicFile(ctx context.Context, slug, relPath string) (io.ReadCloser, FileInfo, error) {
+// GetDropBySlug looks a drop up by its public slug. Like OpenPublicFile it
+// hides private drops behind ErrNotFound.
+func (s *Service) GetDropBySlug(ctx context.Context, slug string) (DropDetail, error) {
+	node, err := s.publishedDrop(ctx, slug)
+	if err != nil {
+		return DropDetail{}, err
+	}
+	return s.detail(ctx, node)
+}
+
+// PublishedVersion describes the snapshot behind a served page: which version
+// it is, and the drop it belongs to.
+type PublishedVersion struct {
+	Detail DropDetail
+	// Seq is the version actually being served, which is the current one
+	// unless the URL pinned an older snapshot.
+	Seq uint
+	// Pinned reports whether the URL asked for this version explicitly.
+	Pinned bool
+	// Files lists the served version's files, which for a pinned URL is not
+	// the same set as the drop's current files.
+	Files []FileInfo
+}
+
+// GetPublishedVersion resolves what a public URL is serving, for the badge
+// injected into published pages.
+func (s *Service) GetPublishedVersion(ctx context.Context, slug string, seq uint, pinned bool) (PublishedVersion, error) {
+	node, err := s.publishedDrop(ctx, slug)
+	if err != nil {
+		return PublishedVersion{}, err
+	}
+	detail, err := s.detail(ctx, node)
+	if err != nil {
+		return PublishedVersion{}, err
+	}
+
+	version, err := s.resolveVersion(ctx, node, seq, pinned)
+	if err != nil {
+		return PublishedVersion{}, err
+	}
+	files := detail.Files
+	if pinned {
+		rows, err := s.filesOf(ctx, version.ID)
+		if err != nil {
+			return PublishedVersion{}, err
+		}
+		files = make([]FileInfo, 0, len(rows))
+		for _, f := range rows {
+			files = append(files, FileInfo{
+				Name:        f.Name,
+				Size:        f.Size,
+				ContentType: f.ContentType,
+				ModifiedAt:  f.UpdatedAt.UTC(),
+			})
+		}
+	}
+
+	return PublishedVersion{Detail: detail, Seq: version.Seq, Pinned: pinned, Files: files}, nil
+}
+
+// publishedDrop resolves a slug to a drop that may be served. Private drops
+// answer ErrNotFound rather than a 403, so the response does not reveal that
+// the slug exists.
+func (s *Service) publishedDrop(ctx context.Context, slug string) (*model.Node, error) {
 	var node model.Node
 	err := s.db.WithContext(ctx).
 		Where("slug = ? AND kind = ?", slug, model.KindDrop).First(&node).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, FileInfo{}, ErrNotFound
+		return nil, ErrNotFound
 	}
+	if err != nil {
+		return nil, err
+	}
+	if node.Visibility == model.VisibilityPrivate {
+		return nil, ErrNotFound
+	}
+	return &node, nil
+}
+
+func (s *Service) resolveVersion(ctx context.Context, node *model.Node, seq uint, pinned bool) (*model.Version, error) {
+	if pinned {
+		return s.versionBySeq(ctx, node.ID, seq)
+	}
+	return s.currentVersion(ctx, node)
+}
+
+// OpenPublicFile serves a published drop by slug. An empty relPath resolves to
+// the version's entrypoint; a leading "@<seq>" pins an older snapshot.
+func (s *Service) OpenPublicFile(ctx context.Context, slug, relPath string) (io.ReadCloser, FileInfo, error) {
+	node, err := s.publishedDrop(ctx, slug)
 	if err != nil {
 		return nil, FileInfo{}, err
 	}
-	if node.Visibility == model.VisibilityPrivate {
-		return nil, FileInfo{}, ErrNotFound
+
+	seq, rest, pinned := SplitVersionRef(relPath)
+	version, err := s.resolveVersion(ctx, node, seq, pinned)
+	if err != nil {
+		return nil, FileInfo{}, err
 	}
 
-	if relPath == "" {
-		relPath = node.Entrypoint
+	if rest == "" {
+		rest = version.Entrypoint
 	}
-	clean, err := validFilePath(relPath)
+	clean, err := validFilePath(rest)
 	if err != nil {
 		return nil, FileInfo{}, err
 	}
 
 	var file model.File
 	err = s.db.WithContext(ctx).
-		Where("node_id = ? AND name = ?", node.ID, clean).First(&file).Error
+		Where("version_id = ? AND name = ?", version.ID, clean).First(&file).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, FileInfo{}, ErrNotFound
 	}
@@ -763,33 +1128,48 @@ func (s *Service) OpenPublicFile(ctx context.Context, slug, relPath string) (io.
 	}, nil
 }
 
-// DeleteFile removes one file from a drop.
+// DeleteFile removes one file from a drop's current version.
 func (s *Service) DeleteFile(ctx context.Context, path string) error {
-	file, node, err := s.lookupFile(ctx, path)
+	node, version, rel, err := s.resolveFileLocation(ctx, path)
 	if err != nil {
 		return err
 	}
-	if err := s.db.WithContext(ctx).Delete(file).Error; err != nil {
+	if rel == MetaFileName {
+		return ErrNotFound
+	}
+
+	var file model.File
+	err = s.db.WithContext(ctx).
+		Where("version_id = ? AND name = ?", version.ID, rel).First(&file).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+
+	if err := s.db.WithContext(ctx).Delete(&file).Error; err != nil {
 		return err
 	}
 	if err := s.objects.Delete(ctx, file.ObjectKey); err != nil {
 		return err
 	}
-	return s.touch(ctx, node)
+	return s.touch(ctx, node, version)
 }
 
-// resolveFileLocation splits a full path into the drop that owns it and the
-// path of the file within that drop. Because files may sit in subdirectories,
-// the split point is not simply the last "/": it is the longest prefix that is
-// an actual drop node. Drops cannot nest, so at most one prefix can match.
-func (s *Service) resolveFileLocation(ctx context.Context, full string) (*model.Node, string, error) {
+// resolveFileLocation splits a full path into the drop that owns it, the drop's
+// current version, and the path of the file within that version. Because files
+// may sit in subdirectories, the split point is not simply the last "/": it is
+// the longest prefix that is an actual drop node. Drops cannot nest, so at most
+// one prefix can match.
+func (s *Service) resolveFileLocation(ctx context.Context, full string) (*model.Node, *model.Version, string, error) {
 	cleaned, err := cleanPath(full)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
 	segments := strings.Split(cleaned, "/")
 	if len(segments) < 2 {
-		return nil, "", ErrNotFound
+		return nil, nil, "", ErrNotFound
 	}
 
 	for i := len(segments) - 1; i >= 1; i-- {
@@ -798,68 +1178,139 @@ func (s *Service) resolveFileLocation(ctx context.Context, full string) (*model.
 			continue // an intermediate directory inside the drop, not a node
 		}
 		if err != nil {
-			return nil, "", err
+			return nil, nil, "", err
 		}
 		if node.Kind != model.KindDrop {
-			return nil, "", ErrNotDrop
+			return nil, nil, "", ErrNotDrop
 		}
-		return node, strings.Join(segments[i:], "/"), nil
+		version, err := s.currentVersion(ctx, node)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		return node, version, strings.Join(segments[i:], "/"), nil
 	}
-	return nil, "", ErrNotFound
-}
-
-// descriptorTarget reports whether path addresses a drop's ".drop" descriptor,
-// returning the drop it belongs to.
-func (s *Service) descriptorTarget(ctx context.Context, path string) (*model.Node, bool, error) {
-	node, rel, err := s.resolveFileLocation(ctx, path)
-	if err != nil {
-		return nil, false, err
-	}
-	if rel != MetaFileName {
-		return nil, false, nil
-	}
-	return node, true, nil
-}
-
-func (s *Service) lookupFile(ctx context.Context, path string) (*model.File, *model.Node, error) {
-	node, filename, err := s.resolveFileLocation(ctx, path)
-	if err != nil {
-		return nil, nil, err
-	}
-	if filename == MetaFileName {
-		return nil, nil, ErrNotFound
-	}
-
-	var file model.File
-	err = s.db.WithContext(ctx).Where("node_id = ? AND name = ?", node.ID, filename).First(&file).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, nil, err
-	}
-	return &file, node, nil
+	return nil, nil, "", ErrNotFound
 }
 
 // ---------- ".drop" descriptor ----------
 
-// writeMeta materializes the drop's metadata next to its files, so a bundle
+// dropDescriptor is the ".drop" file: everything needed to make sense of a
+// bundle pulled straight out of storage, without the database that produced it.
+type dropDescriptor struct {
+	Title      string           `yaml:"title"`
+	Slug       string           `yaml:"slug"`
+	Entrypoint string           `yaml:"entrypoint"`
+	Visibility model.Visibility `yaml:"visibility"`
+	Version    uint             `yaml:"version"`
+	CreatedAt  time.Time        `yaml:"created_at"`
+	UpdatedAt  time.Time        `yaml:"updated_at"`
+	Files      []descriptorFile `yaml:"files"`
+}
+
+type descriptorFile struct {
+	Path        string `yaml:"path"`
+	Size        int64  `yaml:"size"`
+	ContentType string `yaml:"content_type"`
+}
+
+// descriptorBytes renders a drop's descriptor. Everything that serves, sizes or
+// stores the ".drop" goes through this one function: taking its bytes from
+// storage while computing its size from the database let the two drift, and a
+// Content-Length longer than the body truncates every download of it.
+func (s *Service) descriptorBytes(node *model.Node, version *model.Version, files []model.File) ([]byte, error) {
+	listing := make([]descriptorFile, 0, len(files))
+	for _, f := range files {
+		listing = append(listing, descriptorFile{
+			Path:        f.Name,
+			Size:        f.Size,
+			ContentType: f.ContentType,
+		})
+	}
+	return yaml.Marshal(dropDescriptor{
+		Title:      node.Title,
+		Slug:       node.Slug,
+		Entrypoint: version.Entrypoint,
+		Visibility: node.Visibility,
+		Version:    version.Seq,
+		CreatedAt:  node.CreatedAt.UTC(),
+		UpdatedAt:  node.UpdatedAt.UTC(),
+		Files:      listing,
+	})
+}
+
+// descriptorFileInfo describes a rendered descriptor, sized from the very bytes
+// it was rendered into.
+func descriptorFileInfo(version *model.Version, payload []byte) FileInfo {
+	return FileInfo{
+		Name:        MetaFileName,
+		Size:        int64(len(payload)),
+		ContentType: "application/yaml",
+		ModifiedAt:  version.UpdatedAt.UTC(),
+		Generated:   true,
+	}
+}
+
+func (s *Service) descriptorInfo(node *model.Node, version *model.Version, files []model.File) (FileInfo, error) {
+	payload, err := s.descriptorBytes(node, version, files)
+	if err != nil {
+		return FileInfo{}, err
+	}
+	return descriptorFileInfo(version, payload), nil
+}
+
+// writeMeta mirrors the descriptor next to the version's files, so a bundle
 // pulled straight out of storage still describes itself.
-func (s *Service) writeMeta(ctx context.Context, node *model.Node) error {
-	payload, err := yaml.Marshal(metaOf(node))
+func (s *Service) writeMeta(ctx context.Context, node *model.Node, version *model.Version) error {
+	files, err := s.filesOf(ctx, version.ID)
 	if err != nil {
 		return err
 	}
-	return s.objects.Put(ctx, objectKey(node.Slug, MetaFileName),
+	payload, err := s.descriptorBytes(node, version, files)
+	if err != nil {
+		return err
+	}
+	return s.objects.Put(ctx, objectKey(node.Slug, version.Seq, MetaFileName),
 		bytes.NewReader(payload), int64(len(payload)), "application/yaml")
 }
 
-// touch bumps the drop's UpdatedAt and refreshes its descriptor.
-func (s *Service) touch(ctx context.Context, node *model.Node) error {
-	if err := s.db.WithContext(ctx).Model(node).Update("updated_at", time.Now().UTC()).Error; err != nil {
+// touch records that a version's contents changed and refreshes its descriptor.
+// It does not open a new version: snapshots are cut by uploads, not by edits.
+func (s *Service) touch(ctx context.Context, node *model.Node, version *model.Version) error {
+	now := time.Now().UTC()
+	if err := s.db.WithContext(ctx).Model(version).Update("updated_at", now).Error; err != nil {
 		return err
 	}
-	return s.writeMeta(ctx, node)
+	if err := s.db.WithContext(ctx).Model(node).Update("updated_at", now).Error; err != nil {
+		return err
+	}
+	version.UpdatedAt = now
+	node.UpdatedAt = now
+	return s.writeMeta(ctx, node, version)
+}
+
+// ---------- version references in public URLs ----------
+
+// VersionRefPrefix marks a pinned version inside a public URL: /d/{slug}/@2/.
+// Uploads reject file paths starting with it, so a real file can never shadow
+// a version reference.
+const VersionRefPrefix = "@"
+
+// SplitVersionRef pulls a leading "@<seq>" out of a public path, returning the
+// version asked for and the rest of the path.
+func SplitVersionRef(relPath string) (seq uint, rest string, ok bool) {
+	if !strings.HasPrefix(relPath, VersionRefPrefix) {
+		return 0, relPath, false
+	}
+	ref := strings.TrimPrefix(relPath, VersionRefPrefix)
+	rest = ""
+	if i := strings.Index(ref, "/"); i >= 0 {
+		ref, rest = ref[:i], ref[i+1:]
+	}
+	n, err := strconv.ParseUint(ref, 10, 32)
+	if err != nil || n == 0 {
+		return 0, relPath, false
+	}
+	return uint(n), rest, true
 }
 
 // ---------- slugs ----------

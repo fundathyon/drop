@@ -63,6 +63,12 @@ func validFilePath(p string) (string, error) {
 	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
 		return "", ErrInvalidPath
 	}
+	// A public URL addresses an older snapshot as /d/{slug}/@2/…, so a file
+	// whose first segment starts with "@" would be unreachable behind that
+	// reference. Rejecting it on the way in beats resolving the ambiguity later.
+	if strings.HasPrefix(cleaned, VersionRefPrefix) {
+		return "", ErrInvalidPath
+	}
 	for _, seg := range strings.Split(cleaned, "/") {
 		// ".drop" is rejected at every level, not just the root: one reserved
 		// name is easier to reason about than a positional rule.
