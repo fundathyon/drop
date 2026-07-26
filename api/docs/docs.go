@@ -1367,6 +1367,11 @@ const docTemplate = `{
         "drop_internal_service.DropDetail": {
             "type": "object",
             "properties": {
+                "entrypoint_missing": {
+                    "description": "EntrypointMissing marks a drop whose entrypoint names no file it holds.\nIts URL answers 404 until a page by that name arrives, or the metadata\nis pointed at one that exists.",
+                    "type": "boolean",
+                    "example": false
+                },
                 "files": {
                     "type": "array",
                     "items": {

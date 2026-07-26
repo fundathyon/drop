@@ -752,6 +752,32 @@ dialog::backdrop {
   max-height: 60vh;
 }
 
+/* ---------- inline notice ---------- */
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-width: 1px;
+  border-color: color-mix(in oklab, var(--destructive) 40%, transparent);
+  border-radius: calc(var(--radius) * 0.8);
+  background: color-mix(in oklab, var(--destructive) 8%, transparent);
+}
+
+.notice svg {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+  color: var(--destructive);
+}
+
+.notice code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+}
+
 /* ---------- signed-out pages ---------- */
 
 .centered {

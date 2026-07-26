@@ -130,6 +130,10 @@ type DropDetail struct {
 	Files []FileInfo `json:"files"`
 	// Versions is the publication history, newest first.
 	Versions []VersionInfo `json:"versions"`
+	// EntrypointMissing marks a drop whose entrypoint names no file it holds.
+	// Its URL answers 404 until a page by that name arrives, or the metadata
+	// is pointed at one that exists.
+	EntrypointMissing bool `json:"entrypoint_missing" example:"false"`
 }
 
 // DropInput carries the fields accepted when creating a drop.
@@ -356,12 +360,24 @@ func (s *Service) detail(ctx context.Context, node *model.Node) (DropDetail, err
 		return DropDetail{}, err
 	}
 
+	// A drop whose entrypoint names nothing it holds answers 404 at its own
+	// URL. Reporting it is what stops the admin from offering a link that
+	// cannot work, which reads as the server being broken.
+	entrypointMissing := true
+	for _, f := range files {
+		if f.Name == version.Entrypoint {
+			entrypointMissing = false
+			break
+		}
+	}
+
 	return DropDetail{
-		Node:     Node{Name: node.Name, Path: node.Path, Kind: node.Kind},
-		URL:      s.publicURL(node.Slug),
-		Meta:     metaOf(node, version),
-		Files:    infos,
-		Versions: versions,
+		Node:              Node{Name: node.Name, Path: node.Path, Kind: node.Kind},
+		URL:               s.publicURL(node.Slug),
+		Meta:              metaOf(node, version),
+		Files:             infos,
+		Versions:          versions,
+		EntrypointMissing: entrypointMissing,
 	}, nil
 }
 
@@ -901,10 +917,53 @@ func (s *Service) SaveFile(ctx context.Context, dropPath, filename string, r io.
 	if err != nil {
 		return FileInfo{}, err
 	}
+	if err := s.adoptEntrypoint(ctx, version); err != nil {
+		return FileInfo{}, err
+	}
 	if err := s.touch(ctx, node, version); err != nil {
 		return FileInfo{}, err
 	}
 	return info, nil
+}
+
+// adoptEntrypoint repairs a drop that points at a page it does not have.
+//
+// A drop created before its files exist gets the default "index.html", and
+// uploading a page under any other name used to leave that pointing at
+// nothing: the drop looked fine in the admin and answered 404 at its own URL.
+// Once the files can name a page unambiguously, the drop follows them.
+//
+// It only ever fills a gap. An entrypoint that resolves is a deliberate choice
+// and is left alone, and an ambiguous set of pages leaves the drop as it was
+// rather than picking for the user — this is a repair, not a reason to fail an
+// upload that otherwise worked.
+func (s *Service) adoptEntrypoint(ctx context.Context, version *model.Version) error {
+	files, err := s.filesOf(ctx, version.ID)
+	if err != nil {
+		return err
+	}
+
+	names := make([]string, 0, len(files))
+	for _, f := range files {
+		if f.Name == MetaFileName {
+			continue // generated; never the page to open
+		}
+		if f.Name == version.Entrypoint {
+			return nil
+		}
+		names = append(names, f.Name)
+	}
+
+	entrypoint, err := inferEntrypoint(names)
+	if err != nil {
+		return nil
+	}
+	if err := s.db.WithContext(ctx).Model(version).
+		Update("entrypoint", entrypoint).Error; err != nil {
+		return err
+	}
+	version.Entrypoint = entrypoint
+	return nil
 }
 
 // saveFile does the storing without touching the drop, so an upload of many

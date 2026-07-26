@@ -22,14 +22,27 @@
       <h2 class="section-title">Archivos</h2>
       <span class="badge badge-secondary">v{{.Detail.Meta.Version}}</span>
       <span class="badge badge-secondary">{{.Detail.Meta.Visibility}}</span>
-      {{/* A private drop answers 404 at its URL, so don't offer the link. */}}
-      {{if ne .Detail.Meta.Visibility "private"}}
+      {{/* A private drop answers 404 at its URL, so don't offer the link. Nor
+           does one whose entrypoint names a file it does not have. */}}
+      {{if and (ne .Detail.Meta.Visibility "private") (not .Detail.EntrypointMissing)}}
         <a class="link" href="{{.Detail.URL}}" target="_blank" rel="noopener"
            title="Abrir el drop publicado">
           {{icon "external-link" ""}}{{.Detail.URL}}
         </a>
       {{end}}
     </div>
+
+    {{if .Detail.EntrypointMissing}}
+      <p class="notice" role="status">
+        {{icon "triangle-alert" ""}}
+        <span>
+          Este drop abre <code>{{.Detail.Meta.Entrypoint}}</code>, y no hay
+          ningún archivo con ese nombre: su URL responde 404. Sube esa página,
+          o cambia el entrypoint desde <strong>Metadata</strong> al archivo que
+          quieras servir.
+        </span>
+      </p>
+    {{end}}
 
     {{if not .Detail.Files}}
       <div class="empty">

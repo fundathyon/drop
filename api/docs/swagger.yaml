@@ -97,6 +97,13 @@ definitions:
     - VisibilityPrivate
   drop_internal_service.DropDetail:
     properties:
+      entrypoint_missing:
+        description: |-
+          EntrypointMissing marks a drop whose entrypoint names no file it holds.
+          Its URL answers 404 until a page by that name arrives, or the metadata
+          is pointed at one that exists.
+        example: false
+        type: boolean
       files:
         items:
           $ref: '#/definitions/drop_internal_service.FileInfo'

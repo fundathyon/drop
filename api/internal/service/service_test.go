@@ -1082,3 +1082,97 @@ func TestDeleteRecursiveRemovesObjects(t *testing.T) {
 		t.Fatalf("expected ErrInvalidPath deleting the root, got %v", err)
 	}
 }
+
+// A drop created before it has any files gets the default entrypoint, and
+// nothing used to reconcile it when a page arrived under another name: the
+// admin looked fine and the drop's own URL answered 404.
+func TestUploadingAPageAdoptsItAsTheEntrypoint(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTestService(t)
+
+	drop, err := svc.CreateDrop(ctx, DropInput{Name: "ejemplo", Title: "Ejemplo"})
+	if err != nil {
+		t.Fatalf("CreateDrop: %v", err)
+	}
+	if drop.Meta.Entrypoint != "index.html" {
+		t.Fatalf("expected the default entrypoint, got %q", drop.Meta.Entrypoint)
+	}
+	if !drop.EntrypointMissing {
+		t.Fatal("a drop with no files cannot resolve its entrypoint")
+	}
+
+	if _, err := svc.SaveFile(ctx, drop.Path, "tablero.html",
+		strings.NewReader("<h1>hola</h1>"), 13, "text/html"); err != nil {
+		t.Fatalf("SaveFile: %v", err)
+	}
+
+	after, err := svc.GetDrop(ctx, drop.Path)
+	if err != nil {
+		t.Fatalf("GetDrop: %v", err)
+	}
+	if after.Meta.Entrypoint != "tablero.html" {
+		t.Fatalf("expected the uploaded page to become the entrypoint, got %q",
+			after.Meta.Entrypoint)
+	}
+	if after.EntrypointMissing {
+		t.Fatal("the entrypoint should resolve once the page is there")
+	}
+}
+
+func TestAnEntrypointThatResolvesIsNeverOverridden(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTestService(t)
+
+	drop, err := svc.UploadDrop(ctx, UploadDropInput{
+		Title: "Sitio",
+		Files: []UploadFile{uploadFile("index.html", "text/html", "<h1>uno</h1>")},
+	})
+	if err != nil {
+		t.Fatalf("UploadDrop: %v", err)
+	}
+
+	// Adding a second page must not move the drop off the one it opens.
+	if _, err := svc.SaveFile(ctx, drop.Path, "otra.html",
+		strings.NewReader("<h1>dos</h1>"), 12, "text/html"); err != nil {
+		t.Fatalf("SaveFile: %v", err)
+	}
+
+	after, err := svc.GetDrop(ctx, drop.Path)
+	if err != nil {
+		t.Fatalf("GetDrop: %v", err)
+	}
+	if after.Meta.Entrypoint != "index.html" {
+		t.Fatalf("a working entrypoint is a deliberate choice; got %q", after.Meta.Entrypoint)
+	}
+}
+
+// Ambiguity is not a reason to reject a file that is otherwise fine: the drop
+// keeps the entrypoint it had, and the admin says it does not resolve.
+func TestAnAmbiguousUploadLeavesTheEntrypointAlone(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTestService(t)
+
+	drop, err := svc.CreateDrop(ctx, DropInput{Name: "ejemplo", Title: "Ejemplo"})
+	if err != nil {
+		t.Fatalf("CreateDrop: %v", err)
+	}
+	for _, name := range []string{"una.html", "otra.html"} {
+		if _, err := svc.SaveFile(ctx, drop.Path, name,
+			strings.NewReader("<h1>x</h1>"), 10, "text/html"); err != nil {
+			t.Fatalf("SaveFile(%s): %v", name, err)
+		}
+	}
+
+	after, err := svc.GetDrop(ctx, drop.Path)
+	if err != nil {
+		t.Fatalf("GetDrop: %v", err)
+	}
+	// The first upload was unambiguous and was adopted; the second could not
+	// improve on it, and must not have failed either.
+	if after.Meta.Entrypoint != "una.html" {
+		t.Fatalf("expected the first page to stay the entrypoint, got %q", after.Meta.Entrypoint)
+	}
+	if after.EntrypointMissing {
+		t.Fatal("una.html is there, so the entrypoint resolves")
+	}
+}
