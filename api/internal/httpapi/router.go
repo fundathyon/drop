@@ -3,6 +3,7 @@
 package httpapi
 
 import (
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -24,13 +25,19 @@ type Config struct {
 	// AllowedOrigins are the browser origins permitted to call this API
 	// cross-origin — the frontend dev server, typically.
 	AllowedOrigins []string
+	// InjectWidget appends the Drop badge to published HTML pages.
+	InjectWidget bool
+	// AdminUI is the built admin frontend, served from the same process. Nil
+	// leaves the server API-only, which is what a binary built without a
+	// frontend build gets.
+	AdminUI fs.FS
 }
 
 // NewRouter builds the HTTP handler: the JSON API plus the Swagger UI.
 func NewRouter(svc *service.Service, cfg Config) http.Handler {
 	gin.SetMode(gin.ReleaseMode)
 
-	h := &handler{svc: svc}
+	h := &handler{svc: svc, injectWidget: cfg.InjectWidget}
 
 	r := gin.New()
 	r.MaxMultipartMemory = maxUploadMemory
@@ -53,6 +60,8 @@ func NewRouter(svc *service.Service, cfg Config) http.Handler {
 		v1.POST("/drops", h.createDrop)
 		v1.POST("/drops/upload", h.uploadDrop)
 		v1.PATCH("/drops", h.patchDrop)
+		v1.GET("/drops/versions", h.listDropVersions)
+		v1.POST("/drops/versions/activate", h.activateDropVersion)
 
 		v1.GET("/files", h.downloadFile)
 		v1.POST("/files", h.uploadFiles)
@@ -65,9 +74,13 @@ func NewRouter(svc *service.Service, cfg Config) http.Handler {
 	})
 	r.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	r.NoRoute(func(c *gin.Context) {
-		abortWithError(c, http.StatusNotFound, "not_found", "no such endpoint")
-	})
+	// The admin UI takes everything that is not an API route, so a single
+	// binary answers for the admin, the API and the published drops.
+	if cfg.AdminUI != nil {
+		r.NoRoute(serveAdminUI(cfg.AdminUI))
+	} else {
+		r.NoRoute(notFound)
+	}
 
 	return r
 }
