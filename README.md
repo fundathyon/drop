@@ -127,14 +127,29 @@ Como una ruta ya no identifica un nodo por sí sola, las URLs del panel y de la
 API llevan `owner=<id>` cuando apuntan a la unidad de otra persona. Sin ese
 parámetro, la ruta es la tuya.
 
-La **visibilidad de un drop publicado es independiente de todo esto**: un drop
-público lo sigue siendo para el mundo en `/d/{slug}/`, se comparta o no. Una
-cosa es quién lo administra y otra quién lo lee.
+La **visibilidad** decide quién puede abrir `/d/{slug}/`, que no es lo mismo que
+quién puede administrarlo desde el panel:
+
+| Visibilidad | Abre su URL |
+|---|---|
+| `public` | cualquiera, y además se puede listar |
+| `unlisted` | cualquiera que tenga el enlace |
+| `private` | su dueño y las cuentas con las que esté compartido; para el resto responde 404 |
+
+Un drop público lo sigue siendo para el mundo se comparta o no: compartir es lo
+que reparte el panel. `private` es la única visibilidad donde las dos cosas se
+tocan — sin eso, un drop privado sería una dirección que no responde a nadie,
+ni siquiera a quien lo subió.
+
+Como un drop privado contesta distinto según quién pregunte, sus respuestas
+salen con `Cache-Control: private, no-store` y todo `/d/` lleva `Vary: Cookie`.
 
 ## Autenticación
 
 Todo pide credenciales menos lo que tiene que ser público: `/healthz`, los
 drops publicados en `/d/`, el formulario de entrada y los enlaces de invitación.
+En `/d/` la sesión se resuelve pero no se exige: sirve a cualquiera si el drop
+es público, y solo a quien corresponda si es privado.
 
 - **El admin** usa una cookie `HttpOnly` de sesión. Se renderiza en el servidor,
   así que nada en la página necesita leer el token — y una vulnerabilidad de XSS

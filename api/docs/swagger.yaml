@@ -155,7 +155,8 @@ definitions:
       url:
         description: |-
           URL is where the drop can be opened. Serving it is subject to
-          visibility: a private drop answers 404 there.
+          visibility: a private drop answers there only for the accounts that may
+          open it, and 404s for everyone else.
         example: http://localhost:8000/d/An1UHNyp/
         type: string
       versions:
@@ -459,8 +460,10 @@ paths:
     get:
       description: Serves a drop's content by slug. Without a path the drop's entrypoint
         is returned; with one, that file. A leading `@<seq>` segment pins an older
-        version, so `/d/{slug}/@2/` keeps serving what version 2 published. Private
-        drops answer 404, so the response never reveals that the slug exists.
+        version, so `/d/{slug}/@2/` keeps serving what version 2 published. A private
+        drop answers only for the accounts that may open it — its owner and whoever
+        it is shared with, by session cookie or bearer token — and 404s for everyone
+        else, so the response never reveals that the slug exists.
       parameters:
       - description: Drop slug
         example: An1UHNyp

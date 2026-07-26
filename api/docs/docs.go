@@ -17,7 +17,7 @@ const docTemplate = `{
     "paths": {
         "/d/{slug}/{filepath}": {
             "get": {
-                "description": "Serves a drop's content by slug. Without a path the drop's entrypoint is returned; with one, that file. A leading ` + "`" + `@\u003cseq\u003e` + "`" + ` segment pins an older version, so ` + "`" + `/d/{slug}/@2/` + "`" + ` keeps serving what version 2 published. Private drops answer 404, so the response never reveals that the slug exists.",
+                "description": "Serves a drop's content by slug. Without a path the drop's entrypoint is returned; with one, that file. A leading ` + "`" + `@\u003cseq\u003e` + "`" + ` segment pins an older version, so ` + "`" + `/d/{slug}/@2/` + "`" + ` keeps serving what version 2 published. A private drop answers only for the accounts that may open it — its owner and whoever it is shared with, by session cookie or bearer token — and 404s for everyone else, so the response never reveals that the slug exists.",
                 "produces": [
                     "text/html"
                 ],
@@ -1436,7 +1436,7 @@ const docTemplate = `{
                     "example": "proyectos/arquitectura"
                 },
                 "url": {
-                    "description": "URL is where the drop can be opened. Serving it is subject to\nvisibility: a private drop answers 404 there.",
+                    "description": "URL is where the drop can be opened. Serving it is subject to\nvisibility: a private drop answers there only for the accounts that may\nopen it, and 404s for everyone else.",
                     "type": "string",
                     "example": "http://localhost:8000/d/An1UHNyp/"
                 },
