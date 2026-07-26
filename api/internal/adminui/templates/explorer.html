@@ -1,0 +1,149 @@
+{{define "actions"}}
+  <div class="toggle-group" role="group" aria-label="Modo de vista">
+    <a href="/?path={{.Path}}&amp;view=grid" aria-pressed="{{eq .Mode "grid"}}"
+       aria-label="Vista de cuadrícula">{{icon "layout-grid" ""}}</a>
+    <a href="/?path={{.Path}}&amp;view=list" aria-pressed="{{eq .Mode "list"}}"
+       aria-label="Vista de lista">{{icon "list" ""}}</a>
+  </div>
+
+  <button type="button" class="btn btn-outline" data-open="new-folder">
+    {{icon "folder-plus" ""}}Nueva carpeta
+  </button>
+  <button type="button" class="btn" data-open="new-drop">
+    {{icon "package-plus" ""}}Nuevo drop
+  </button>
+{{end}}
+
+{{define "content"}}
+  {{if not .Nodes}}
+    <div class="empty">
+      {{icon "folder" ""}}
+      <p>Esta carpeta está vacía.</p>
+    </div>
+  {{else if eq .Mode "list"}}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th style="width: 8rem">Tipo</th>
+            <th style="width: 4rem"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Nodes}}
+            <tr>
+              <td class="name">
+                <a href="/?path={{.Path}}">
+                  {{if eq .Kind "drop"}}{{icon "package" "icon-drop"}}{{else}}{{icon "folder" "icon-folder"}}{{end}}
+                  {{.Name}}
+                </a>
+              </td>
+              <td>
+                {{if eq .Kind "drop"}}
+                  <span class="badge">drop</span>
+                {{else}}
+                  <span class="badge badge-secondary">carpeta</span>
+                {{end}}
+              </td>
+              <td class="right">{{template "delete-node" dict "Node" . "Return" $.Path}}</td>
+            </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  {{else}}
+    <div class="grid">
+      {{range .Nodes}}
+        <div class="card-wrap">
+          <a class="card" href="/?path={{.Path}}">
+            <span class="card-icon">
+              {{if eq .Kind "drop"}}{{icon "package" "icon-drop"}}{{else}}{{icon "folder" "icon-folder"}}{{end}}
+            </span>
+            <p class="card-name" title="{{.Name}}">{{.Name}}</p>
+            <span class="card-badge">
+              {{if eq .Kind "drop"}}
+                <span class="badge">drop</span>
+              {{else}}
+                <span class="badge badge-secondary">carpeta</span>
+              {{end}}
+            </span>
+          </a>
+          <div class="card-menu">{{template "delete-node" dict "Node" . "Return" $.Path}}</div>
+        </div>
+      {{end}}
+    </div>
+  {{end}}
+
+  <dialog id="new-folder">
+    <form method="post" action="/admin/folders">
+      <h2 class="dialog-title">Nueva carpeta</h2>
+      <p class="dialog-description">
+        Una carpeta organiza otras carpetas y drops. No guarda archivos.
+      </p>
+      <input type="hidden" name="parent" value="{{.Path}}" />
+      <div class="dialog-body">
+        <div class="field">
+          <label for="folder-name">Nombre</label>
+          <input id="folder-name" name="name" type="text" autocomplete="off"
+                 placeholder="Proyectos" required />
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" class="btn btn-outline" data-close>Cancelar</button>
+        <button type="submit" class="btn">Crear</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="new-drop">
+    <form method="post" action="/admin/drops">
+      <h2 class="dialog-title">Nuevo drop</h2>
+      <p class="dialog-description">
+        Un drop es la unidad publicable: lleva metadata propia y contiene archivos.
+      </p>
+      <input type="hidden" name="parent" value="{{.Path}}" />
+      <div class="dialog-body">
+        <div class="field">
+          <label for="drop-name">Nombre de carpeta</label>
+          <input id="drop-name" name="name" type="text" autocomplete="off"
+                 placeholder="arquitectura" required />
+        </div>
+        <div class="field">
+          <label for="drop-title">Título</label>
+          <input id="drop-title" name="title" type="text" autocomplete="off"
+                 placeholder="(igual al nombre si se deja vacío)" />
+        </div>
+        <div class="field">
+          <label for="drop-visibility">Visibilidad</label>
+          <select id="drop-visibility" name="visibility">
+            <option value="private">private</option>
+            <option value="unlisted">unlisted</option>
+            <option value="public" selected>public</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="drop-entrypoint">Entrypoint</label>
+          <input id="drop-entrypoint" name="entrypoint" type="text" autocomplete="off"
+                 placeholder="index.html" />
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" class="btn btn-outline" data-close>Cancelar</button>
+        <button type="submit" class="btn">Crear</button>
+      </div>
+    </form>
+  </dialog>
+{{end}}
+
+{{define "delete-node"}}
+  <form class="inline-form" method="post" action="/admin/nodes/delete"
+        data-confirm-title="{{if eq .Node.Kind "drop"}}¿Eliminar este drop?{{else}}¿Eliminar esta carpeta?{{end}}"
+        data-confirm-text="Se eliminará &quot;{{.Node.Name}}&quot; y todo su contenido. Esta acción no se puede deshacer.">
+    <input type="hidden" name="path" value="{{.Node.Path}}" />
+    <input type="hidden" name="return" value="{{.Return}}" />
+    <button type="submit" class="btn btn-ghost btn-icon" aria-label="Eliminar {{.Node.Name}}">
+      {{icon "trash-2" ""}}
+    </button>
+  </form>
+{{end}}

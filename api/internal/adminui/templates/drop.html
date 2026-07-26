@@ -1,0 +1,200 @@
+{{define "actions"}}
+  <button type="button" class="btn btn-outline btn-sm" data-open="edit-meta">
+    {{icon "pencil" ""}}Metadata
+  </button>
+  <button type="button" class="btn btn-outline btn-sm" data-open="upload-files">
+    {{icon "upload" ""}}Subir archivo
+  </button>
+  <form class="inline-form" method="post" action="/admin/nodes/delete"
+        data-confirm-title="¿Eliminar este drop?"
+        data-confirm-text="Se eliminarán el drop y todos sus archivos. Esta acción no se puede deshacer.">
+    <input type="hidden" name="path" value="{{.Detail.Path}}" />
+    <input type="hidden" name="return" value="{{parentOf .Detail.Path}}" />
+    <button type="submit" class="btn btn-destructive btn-sm">
+      {{icon "trash-2" ""}}Eliminar drop
+    </button>
+  </form>
+{{end}}
+
+{{define "content"}}
+  <div class="stack">
+    <div class="row">
+      <h2 class="section-title">Archivos</h2>
+      <span class="badge badge-secondary">v{{.Detail.Meta.Version}}</span>
+      <span class="badge badge-secondary">{{.Detail.Meta.Visibility}}</span>
+      {{/* A private drop answers 404 at its URL, so don't offer the link. */}}
+      {{if ne .Detail.Meta.Visibility "private"}}
+        <a class="link" href="{{.Detail.URL}}" target="_blank" rel="noopener"
+           title="Abrir el drop publicado">
+          {{icon "external-link" ""}}{{.Detail.URL}}
+        </a>
+      {{end}}
+    </div>
+
+    {{if not .Detail.Files}}
+      <div class="empty">
+        {{icon "file-text" ""}}
+        <p>Sin archivos todavía.</p>
+      </div>
+    {{else}}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th style="width: 6rem">Tipo</th>
+              <th style="width: 7rem">Tamaño</th>
+              <th style="width: 11rem">Modificado</th>
+              <th style="width: 7rem"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .Detail.Files}}
+              {{$type := fileType .Name}}
+              {{$full := joinPath $.Detail.Path .Name}}
+              <tr>
+                <td class="name">
+                  {{/* The drop and the name travel apart: a file name can hold
+                       slashes, so a single path cannot say where one ends. */}}
+                  <a href="/admin/edit?path={{$.Detail.Path}}&amp;name={{.Name}}">
+                    {{icon $type.Icon $type.Class}}
+                    {{.Name}}
+                    {{if .Generated}}
+                      <span title="mantenido por la API">{{icon "lock" "lock"}}</span>
+                    {{end}}
+                  </a>
+                </td>
+                <td><span class="badge badge-outline">{{$type.Label}}</span></td>
+                <td class="muted">{{formatSize .Size}}</td>
+                <td class="muted">{{formatDate .ModifiedAt}}</td>
+                <td class="right">
+                  <span class="row-actions">
+                    <a class="btn btn-ghost btn-icon" href="/v1/files?path={{$full}}"
+                       target="_blank" rel="noopener" aria-label="Descargar {{.Name}}">
+                      {{icon "download" ""}}
+                    </a>
+                    {{/* The descriptor is maintained by the API — nothing to delete here. */}}
+                    {{if not .Generated}}
+                      <form class="inline-form" method="post" action="/admin/files/delete"
+                            data-confirm-title="¿Eliminar archivo?"
+                            data-confirm-text="Se eliminará &quot;{{.Name}}&quot; de este drop. Esta acción no se puede deshacer.">
+                        <input type="hidden" name="path" value="{{$full}}" />
+                        <input type="hidden" name="return" value="{{$.Detail.Path}}" />
+                        <button type="submit" class="btn btn-ghost btn-icon"
+                                aria-label="Eliminar {{.Name}}">{{icon "trash-2" ""}}</button>
+                      </form>
+                    {{end}}
+                  </span>
+                </td>
+              </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    {{end}}
+
+    {{/* Only worth showing once the drop has actually been republished. */}}
+    {{if gt (len .Detail.Versions) 1}}
+      <h3 class="section-subtitle" style="margin-top: 0.5rem">Historial de versiones</h3>
+      <div class="table-wrap">
+        <table>
+          <tbody>
+            {{range .Detail.Versions}}
+              <tr>
+                <td class="name" style="width: 4rem">v{{.Seq}}</td>
+                <td style="width: 6rem">
+                  {{if .Current}}<span class="badge badge-secondary">actual</span>{{end}}
+                </td>
+                <td class="muted">
+                  {{.Files}} archivo{{if ne .Files 1}}s{{end}} · {{formatSize .Size}}
+                </td>
+                <td class="muted" style="width: 11rem">{{formatDate .PublishedAt}}</td>
+                <td class="right" style="width: 12rem">
+                  <span class="row-actions">
+                    {{if ne $.Detail.Meta.Visibility "private"}}
+                      <a class="btn btn-ghost btn-sm" href="{{.URL}}" target="_blank" rel="noopener">
+                        {{icon "external-link" ""}}Ver
+                      </a>
+                    {{end}}
+                    {{if not .Current}}
+                      <form class="inline-form" method="post" action="/admin/drops/restore"
+                            data-confirm-title="¿Volver a publicar la versión {{.Seq}}?"
+                            data-confirm-text="La URL del drop pasará a servir la versión {{.Seq}}. No se borra nada: la versión actual seguirá en el historial."
+                            data-confirm-label="Restaurar" data-confirm-variant="default">
+                        <input type="hidden" name="path" value="{{$.Detail.Path}}" />
+                        <input type="hidden" name="seq" value="{{.Seq}}" />
+                        <button type="submit" class="btn btn-outline btn-sm">
+                          {{icon "history" ""}}Restaurar
+                        </button>
+                      </form>
+                    {{end}}
+                  </span>
+                </td>
+              </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    {{end}}
+  </div>
+
+  <dialog id="edit-meta">
+    <form method="post" action="/admin/drops/meta">
+      <h2 class="dialog-title">Metadata del drop</h2>
+      <p class="dialog-description">
+        Se guarda en el archivo <code>.drop</code> junto a los archivos del drop.
+      </p>
+      <input type="hidden" name="path" value="{{.Detail.Path}}" />
+      <div class="dialog-body">
+        <div class="field">
+          <label for="meta-title">Título</label>
+          <input id="meta-title" name="title" type="text" autocomplete="off"
+                 value="{{.Detail.Meta.Title}}" />
+        </div>
+        <div class="field">
+          <label for="meta-visibility">Visibilidad</label>
+          {{$v := .Detail.Meta.Visibility}}
+          <select id="meta-visibility" name="visibility">
+            <option value="private" {{if eq $v "private"}}selected{{end}}>private</option>
+            <option value="unlisted" {{if eq $v "unlisted"}}selected{{end}}>unlisted</option>
+            <option value="public" {{if eq $v "public"}}selected{{end}}>public</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="meta-entrypoint">Entrypoint</label>
+          <input id="meta-entrypoint" name="entrypoint" type="text" autocomplete="off"
+                 value="{{.Detail.Meta.Entrypoint}}" />
+        </div>
+        <dl class="meta-list">
+          <div><dt>Slug</dt><dd class="mono">{{.Detail.Meta.Slug}}</dd></div>
+          <div><dt>Creado</dt><dd>{{formatDate .Detail.Meta.CreatedAt}}</dd></div>
+          <div><dt>Actualizado</dt><dd>{{formatDate .Detail.Meta.UpdatedAt}}</dd></div>
+        </dl>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" class="btn btn-outline" data-close>Cancelar</button>
+        <button type="submit" class="btn">Guardar cambios</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="upload-files">
+    <form method="post" action="/admin/files" enctype="multipart/form-data">
+      <h2 class="dialog-title">Subir archivos</h2>
+      <p class="dialog-description">
+        Un archivo con el mismo nombre reemplaza al que ya está en el drop.
+      </p>
+      <input type="hidden" name="path" value="{{.Detail.Path}}" />
+      <div class="dialog-body">
+        <div class="field">
+          <label for="upload-input">Archivos</label>
+          <input id="upload-input" name="file" type="file" multiple required />
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" class="btn btn-outline" data-close>Cancelar</button>
+        <button type="submit" class="btn">{{icon "upload" ""}}Subir</button>
+      </div>
+    </form>
+  </dialog>
+{{end}}

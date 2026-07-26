@@ -10,7 +10,6 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"drop/internal/adminui"
 	"drop/internal/config"
 	"drop/internal/db"
 	"drop/internal/httpapi"
@@ -44,15 +43,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Built by `make build`; a plain `go build` leaves it out and the process
-	// serves the API alone.
-	admin, hasAdmin := adminui.Assets()
-
-	handler := httpapi.NewRouter(service.New(database, store, cfg.PublicBaseURL), httpapi.Config{
+	handler, err := httpapi.NewRouter(service.New(database, store, cfg.PublicBaseURL), httpapi.Config{
 		AllowedOrigins: cfg.CORSOrigins,
 		InjectWidget:   cfg.InjectWidget,
-		AdminUI:        admin,
 	})
+	if err != nil {
+		slog.Error("build router", "error", err)
+		os.Exit(1)
+	}
 
 	slog.Info("dropd listening",
 		"addr", cfg.HTTPAddr,
@@ -60,11 +58,8 @@ func main() {
 		"bucket", cfg.S3.Bucket,
 		"s3_endpoint", cfg.S3.Endpoint,
 		"cors_origins", cfg.CORSOrigins,
-		"admin_ui", hasAdmin,
+		"admin", "http://localhost"+cfg.HTTPAddr+"/",
 		"docs", "http://localhost"+cfg.HTTPAddr+"/docs")
-	if !hasAdmin {
-		slog.Warn("no admin UI embedded in this binary; run `make build` to include it")
-	}
 
 	if err := http.ListenAndServe(cfg.HTTPAddr, handler); err != nil {
 		slog.Error("server stopped", "error", err)
