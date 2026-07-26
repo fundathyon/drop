@@ -1,0 +1,33 @@
+<svg viewBox="0 0 320 320" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="lineAB" x1="107" y1="160" x2="221" y2="79" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3D5AFE"/>
+      <stop offset="1" stop-color="#22D3B0"/>
+    </linearGradient>
+    <linearGradient id="lineAC" x1="107" y1="160" x2="221" y2="241" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3D5AFE"/>
+      <stop offset="1" stop-color="#8B3FE8"/>
+    </linearGradient>
+    <linearGradient id="nodeBlue" x1="61" y1="114" x2="153" y2="206" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5B7CFF"/>
+      <stop offset="1" stop-color="#2540DB"/>
+    </linearGradient>
+    <linearGradient id="nodeTeal" x1="183" y1="41" x2="259" y2="117" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3CE29A"/>
+      <stop offset="1" stop-color="#14BFD1"/>
+    </linearGradient>
+    <linearGradient id="nodePurple" x1="183" y1="203" x2="259" y2="279" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6C46E5"/>
+      <stop offset="1" stop-color="#A233D6"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="320" height="320" rx="70" fill="#0A0E1B"/>
+
+  <line x1="107" y1="160" x2="221" y2="79" stroke="url(#lineAB)" stroke-width="22" stroke-linecap="round"/>
+  <line x1="107" y1="160" x2="221" y2="241" stroke="url(#lineAC)" stroke-width="22" stroke-linecap="round"/>
+
+  <circle cx="221" cy="79" r="38" fill="url(#nodeTeal)"/>
+  <circle cx="221" cy="241" r="38" fill="url(#nodePurple)"/>
+  <circle cx="107" cy="160" r="46" fill="url(#nodeBlue)"/>
+</svg>
