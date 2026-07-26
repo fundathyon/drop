@@ -14,8 +14,11 @@ type Config struct {
 	// the API hands back as a drop's URL, so it must be reachable by whoever
 	// receives that link.
 	PublicBaseURL string
-	CORSOrigins   []string
-	S3            S3
+	// InjectWidget appends the Drop badge to published HTML pages. It is the
+	// only thing the API adds to user content, so it can be turned off.
+	InjectWidget bool
+	CORSOrigins  []string
+	S3           S3
 }
 
 // S3 points at a MinIO (or any S3-compatible) endpoint holding drop content.
@@ -34,6 +37,7 @@ func Load() Config {
 		HTTPAddr:      env("DROP_HTTP_ADDR", ":8000"),
 		DatabaseDSN:   env("DROP_DATABASE_DSN", "drop.db"),
 		PublicBaseURL: strings.TrimSuffix(env("DROP_PUBLIC_BASE_URL", "http://localhost:8000"), "/"),
+		InjectWidget:  envBool("DROP_INJECT_WIDGET", true),
 		CORSOrigins:   splitList(env("DROP_CORS_ORIGINS", "http://localhost:3000")),
 		S3: S3{
 			Endpoint:  env("DROP_S3_ENDPOINT", "localhost:9000"),
