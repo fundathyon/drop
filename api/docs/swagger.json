@@ -10,7 +10,7 @@
     "paths": {
         "/d/{slug}/{filepath}": {
             "get": {
-                "description": "Serves a drop's content by slug. Without a path the drop's entrypoint is returned; with one, that file. Private drops answer 404, so the response never reveals that the slug exists.",
+                "description": "Serves a drop's content by slug. Without a path the drop's entrypoint is returned; with one, that file. A leading `@\u003cseq\u003e` segment pins an older version, so `/d/{slug}/@2/` keeps serving what version 2 published. Private drops answer 404, so the response never reveals that the slug exists.",
                 "produces": [
                     "text/html"
                 ],
@@ -317,6 +317,114 @@
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/drops/versions": {
+            "get": {
+                "description": "Returns the drop's publication history, newest first. Each entry carries a URL that keeps serving that snapshot even after later uploads.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "drops"
+                ],
+                "summary": "List a drop's versions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "proyectos/arquitectura",
+                        "description": "Drop path",
+                        "name": "path",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.VersionsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/drops/versions/activate": {
+            "post": {
+                "description": "Points the drop's URL back at an earlier snapshot. Nothing is deleted: the history keeps every version, including the one that was current.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "drops"
+                ],
+                "summary": "Republish an earlier version",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "proyectos/arquitectura",
+                        "description": "Drop path",
+                        "name": "path",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "description": "Version to republish",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ActivateVersionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/drop_internal_service.DropDetail"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/internal_httpapi.ErrorResponse"
                         }
@@ -660,7 +768,14 @@
                 "url": {
                     "description": "URL is where the drop can be opened. Serving it is subject to\nvisibility: a private drop answers 404 there.",
                     "type": "string",
-                    "example": "http://localhost:8000/d/An1UHNyp"
+                    "example": "http://localhost:8000/d/An1UHNyp/"
+                },
+                "versions": {
+                    "description": "Versions is the publication history, newest first.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/drop_internal_service.VersionInfo"
+                    }
                 }
             }
         },
@@ -684,6 +799,11 @@
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "version": {
+                    "description": "Version is the sequence number of the snapshot currently published: 1 on\nfirst upload, and one more each time the drop is uploaded again.",
+                    "type": "integer",
+                    "example": 3
                 },
                 "visibility": {
                     "enum": [
@@ -747,6 +867,52 @@
                 "path": {
                     "type": "string",
                     "example": "proyectos/arquitectura"
+                }
+            }
+        },
+        "drop_internal_service.VersionInfo": {
+            "type": "object",
+            "properties": {
+                "current": {
+                    "description": "Current marks the version served at the drop's own URL.",
+                    "type": "boolean",
+                    "example": true
+                },
+                "entrypoint": {
+                    "type": "string",
+                    "example": "index.html"
+                },
+                "files": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "published_at": {
+                    "type": "string"
+                },
+                "seq": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "size": {
+                    "type": "integer",
+                    "example": 20480
+                },
+                "url": {
+                    "description": "URL pins this snapshot, and keeps working after later uploads.",
+                    "type": "string",
+                    "example": "http://localhost:8000/d/An1UHNyp/@2/"
+                }
+            }
+        },
+        "internal_httpapi.ActivateVersionRequest": {
+            "type": "object",
+            "required": [
+                "seq"
+            ],
+            "properties": {
+                "seq": {
+                    "type": "integer",
+                    "example": 2
                 }
             }
         },
@@ -873,6 +1039,21 @@
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/drop_internal_service.FileInfo"
+                    }
+                }
+            }
+        },
+        "internal_httpapi.VersionsResponse": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "example": "proyectos/arquitectura"
+                },
+                "versions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/drop_internal_service.VersionInfo"
                     }
                 }
             }

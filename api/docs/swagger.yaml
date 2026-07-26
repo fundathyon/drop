@@ -43,8 +43,13 @@ definitions:
         description: |-
           URL is where the drop can be opened. Serving it is subject to
           visibility: a private drop answers 404 there.
-        example: http://localhost:8000/d/An1UHNyp
+        example: http://localhost:8000/d/An1UHNyp/
         type: string
+      versions:
+        description: Versions is the publication history, newest first.
+        items:
+          $ref: '#/definitions/drop_internal_service.VersionInfo'
+        type: array
     type: object
   drop_internal_service.DropMeta:
     properties:
@@ -61,6 +66,12 @@ definitions:
         type: string
       updated_at:
         type: string
+      version:
+        description: |-
+          Version is the sequence number of the snapshot currently published: 1 on
+          first upload, and one more each time the drop is uploaded again.
+        example: 3
+        type: integer
       visibility:
         allOf:
         - $ref: '#/definitions/drop_internal_model.Visibility'
@@ -105,6 +116,39 @@ definitions:
       path:
         example: proyectos/arquitectura
         type: string
+    type: object
+  drop_internal_service.VersionInfo:
+    properties:
+      current:
+        description: Current marks the version served at the drop's own URL.
+        example: true
+        type: boolean
+      entrypoint:
+        example: index.html
+        type: string
+      files:
+        example: 3
+        type: integer
+      published_at:
+        type: string
+      seq:
+        example: 2
+        type: integer
+      size:
+        example: 20480
+        type: integer
+      url:
+        description: URL pins this snapshot, and keeps working after later uploads.
+        example: http://localhost:8000/d/An1UHNyp/@2/
+        type: string
+    type: object
+  internal_httpapi.ActivateVersionRequest:
+    properties:
+      seq:
+        example: 2
+        type: integer
+    required:
+    - seq
     type: object
   internal_httpapi.CreateDropRequest:
     properties:
@@ -191,6 +235,16 @@ definitions:
           $ref: '#/definitions/drop_internal_service.FileInfo'
         type: array
     type: object
+  internal_httpapi.VersionsResponse:
+    properties:
+      path:
+        example: proyectos/arquitectura
+        type: string
+      versions:
+        items:
+          $ref: '#/definitions/drop_internal_service.VersionInfo'
+        type: array
+    type: object
 info:
   contact: {}
   description: 'Admin API for Drop: a Drive-like tree where any folder holding a `.drop`
@@ -201,8 +255,9 @@ paths:
   /d/{slug}/{filepath}:
     get:
       description: Serves a drop's content by slug. Without a path the drop's entrypoint
-        is returned; with one, that file. Private drops answer 404, so the response
-        never reveals that the slug exists.
+        is returned; with one, that file. A leading `@<seq>` segment pins an older
+        version, so `/d/{slug}/@2/` keeps serving what version 2 published. Private
+        drops answer 404, so the response never reveals that the slug exists.
       parameters:
       - description: Drop slug
         example: An1UHNyp
@@ -422,6 +477,80 @@ paths:
           schema:
             $ref: '#/definitions/internal_httpapi.ErrorResponse'
       summary: Create a drop with its files
+      tags:
+      - drops
+  /v1/drops/versions:
+    get:
+      description: Returns the drop's publication history, newest first. Each entry
+        carries a URL that keeps serving that snapshot even after later uploads.
+      parameters:
+      - description: Drop path
+        example: proyectos/arquitectura
+        in: query
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_httpapi.VersionsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      summary: List a drop's versions
+      tags:
+      - drops
+  /v1/drops/versions/activate:
+    post:
+      consumes:
+      - application/json
+      description: 'Points the drop''s URL back at an earlier snapshot. Nothing is
+        deleted: the history keeps every version, including the one that was current.'
+      parameters:
+      - description: Drop path
+        example: proyectos/arquitectura
+        in: query
+        name: path
+        required: true
+        type: string
+      - description: Version to republish
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_httpapi.ActivateVersionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/drop_internal_service.DropDetail'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      summary: Republish an earlier version
       tags:
       - drops
   /v1/files:
