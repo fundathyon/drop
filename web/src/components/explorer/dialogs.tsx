@@ -299,6 +299,8 @@ interface ConfirmDialogProps {
   title: string;
   description: string;
   confirmLabel?: string;
+  /** Most confirmations here delete something; set false for the ones that don't. */
+  destructive?: boolean;
   onConfirm: () => void;
 }
 
@@ -308,6 +310,7 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel = 'Eliminar',
+  destructive = true,
   onConfirm,
 }: ConfirmDialogProps) {
   return (
@@ -325,7 +328,7 @@ export function ConfirmDialog({
             element, and between two same-specificity utilities the stylesheet
             order wins — which rendered the confirm button primary-coloured.
           */}
-          <AlertDialogAction variant="destructive" onClick={onConfirm}>
+          <AlertDialogAction variant={destructive ? 'destructive' : 'default'} onClick={onConfirm}>
             {confirmLabel}
           </AlertDialogAction>
         </AlertDialogFooter>

@@ -74,6 +74,14 @@ export const api = {
       body: JSON.stringify(patch),
     }),
 
+  /** Point the drop's URL back at an earlier version. Nothing is deleted. */
+  activateVersion: (path: string, seq: number) =>
+    request<DropDetail>(url('/v1/drops/versions/activate', { path }), {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ seq }),
+    }),
+
   uploadFiles: (dropPath: string, files: Iterable<File>) => {
     const form = new FormData();
     for (const file of files) form.append('file', file);

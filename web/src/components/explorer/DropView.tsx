@@ -1,5 +1,14 @@
 import { useRef, useState } from 'react';
-import { Download, ExternalLink, FileText, Lock, Pencil, Trash2, Upload } from 'lucide-react';
+import {
+  Download,
+  ExternalLink,
+  FileText,
+  History,
+  Lock,
+  Pencil,
+  Trash2,
+  Upload,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { FileEditorDialog } from '@/components/explorer/FileEditorDialog';
@@ -18,7 +27,7 @@ import { reportError } from '@/hooks/use-explorer';
 import { api } from '@/lib/api';
 import { fileType } from '@/lib/file-types';
 import { formatDate, formatSize, joinPath } from '@/lib/format';
-import type { DropDetail, DropMetaPatch, FileInfo } from '@/lib/types';
+import type { DropDetail, DropMetaPatch, FileInfo, VersionInfo } from '@/lib/types';
 
 interface Props {
   detail: DropDetail;
@@ -32,6 +41,7 @@ export function DropView({ detail, onChanged, onDeleted }: Props) {
   const [editOpen, setEditOpen] = useState(false);
   const [openFile, setOpenFile] = useState<FileInfo | null>(null);
   const [pendingFile, setPendingFile] = useState<FileInfo | null>(null);
+  const [pendingRestore, setPendingRestore] = useState<VersionInfo | null>(null);
   const [confirmDrop, setConfirmDrop] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -81,10 +91,21 @@ export function DropView({ detail, onChanged, onDeleted }: Props) {
     }
   }
 
+  async function restoreVersion(seq: number) {
+    try {
+      await api.activateVersion(detail.path, seq);
+      toast.success(`Ahora se publica la versión ${seq}`);
+      onChanged();
+    } catch (err) {
+      reportError(err);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-sm font-semibold">Archivos</h2>
+        <Badge variant="secondary">v{detail.meta.version}</Badge>
         <Badge variant="secondary">{detail.meta.visibility}</Badge>
         {/* A private drop answers 404 at its URL, so don't offer the link. */}
         {detail.meta.visibility !== 'private' && (
@@ -220,6 +241,72 @@ export function DropView({ detail, onChanged, onDeleted }: Props) {
             </TableBody>
           </Table>
         </div>
+      )}
+
+      {/* Only worth showing once the drop has actually been republished. */}
+      {detail.versions.length > 1 && (
+        <div className="mt-2 flex flex-col gap-2">
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase">
+            Historial de versiones
+          </h3>
+          <div className="rounded-lg border">
+            <Table>
+              <TableBody>
+                {detail.versions.map((version) => (
+                  <TableRow key={version.seq}>
+                    <TableCell className="w-16 font-medium">v{version.seq}</TableCell>
+                    <TableCell className="w-24">
+                      {version.current && <Badge variant="secondary">actual</Badge>}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {version.files} archivo{version.files === 1 ? '' : 's'} ·{' '}
+                      {formatSize(version.size)}
+                    </TableCell>
+                    <TableCell className="w-48 text-muted-foreground">
+                      {formatDate(version.published_at)}
+                    </TableCell>
+                    <TableCell className="w-44 text-right">
+                      {detail.meta.visibility !== 'private' && (
+                        <Button variant="ghost" size="sm" asChild>
+                          <a href={version.url} target="_blank" rel="noopener">
+                            <ExternalLink className="size-3" />
+                            Ver
+                          </a>
+                        </Button>
+                      )}
+                      {!version.current && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="ml-1"
+                          onClick={() => setPendingRestore(version)}
+                        >
+                          <History className="size-3" />
+                          Restaurar
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      )}
+
+      {pendingRestore && (
+        <ConfirmDialog
+          open
+          onOpenChange={(open) => !open && setPendingRestore(null)}
+          title={`¿Volver a publicar la versión ${pendingRestore.seq}?`}
+          description={`La URL del drop pasará a servir la versión ${pendingRestore.seq}. No se borra nada: la versión actual seguirá en el historial.`}
+          confirmLabel="Restaurar"
+          destructive={false}
+          onConfirm={() => {
+            void restoreVersion(pendingRestore.seq);
+            setPendingRestore(null);
+          }}
+        />
       )}
 
       {/* Mounted only while open — see the note in FileExplorer. */}
