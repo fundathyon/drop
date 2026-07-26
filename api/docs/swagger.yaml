@@ -1,5 +1,74 @@
 basePath: /
 definitions:
+  drop_internal_auth.InvitationInfo:
+    properties:
+      accepted_at:
+        type: string
+      created_at:
+        type: string
+      email:
+        example: nuevo@ejemplo.com
+        type: string
+      expires_at:
+        type: string
+      id:
+        example: 1
+        type: integer
+      role:
+        allOf:
+        - $ref: '#/definitions/drop_internal_model.Role'
+        enum:
+        - admin
+        - user
+        example: user
+      status:
+        allOf:
+        - $ref: '#/definitions/drop_internal_model.InvitationStatus'
+        enum:
+        - pending
+        - accepted
+        - expired
+        - revoked
+        example: pending
+    type: object
+  drop_internal_auth.UserInfo:
+    properties:
+      active:
+        example: true
+        type: boolean
+      created_at:
+        type: string
+      email:
+        example: admin@drop.local
+        type: string
+      id:
+        example: 1
+        type: integer
+      last_login_at:
+        type: string
+      name:
+        example: Admin
+        type: string
+      role:
+        allOf:
+        - $ref: '#/definitions/drop_internal_model.Role'
+        enum:
+        - admin
+        - user
+        example: admin
+    type: object
+  drop_internal_model.InvitationStatus:
+    enum:
+    - pending
+    - accepted
+    - expired
+    - revoked
+    type: string
+    x-enum-varnames:
+    - InvitationPending
+    - InvitationAccepted
+    - InvitationExpired
+    - InvitationRevoked
   drop_internal_model.Kind:
     enum:
     - folder
@@ -8,6 +77,14 @@ definitions:
     x-enum-varnames:
     - KindFolder
     - KindDrop
+  drop_internal_model.Role:
+    enum:
+    - admin
+    - user
+    type: string
+    x-enum-varnames:
+    - RoleAdmin
+    - RoleUser
   drop_internal_model.Visibility:
     enum:
     - public
@@ -186,6 +263,32 @@ definitions:
     required:
     - name
     type: object
+  internal_httpapi.CreateInvitationRequest:
+    properties:
+      email:
+        example: nuevo@ejemplo.com
+        type: string
+      role:
+        allOf:
+        - $ref: '#/definitions/drop_internal_model.Role'
+        enum:
+        - admin
+        - user
+        example: user
+    required:
+    - email
+    type: object
+  internal_httpapi.CreateInvitationResponse:
+    properties:
+      invitation:
+        $ref: '#/definitions/drop_internal_auth.InvitationInfo'
+      token:
+        type: string
+      url:
+        description: URL is the link to hand over. No email is sent in this version.
+        example: http://localhost:8000/invitacion?token=…
+        type: string
+    type: object
   internal_httpapi.ErrorResponse:
     properties:
       code:
@@ -201,6 +304,13 @@ definitions:
         example: ok
         type: string
     type: object
+  internal_httpapi.InvitationsResponse:
+    properties:
+      invitations:
+        items:
+          $ref: '#/definitions/drop_internal_auth.InvitationInfo'
+        type: array
+    type: object
   internal_httpapi.ListResponse:
     properties:
       children:
@@ -210,6 +320,18 @@ definitions:
       path:
         example: proyectos
         type: string
+    type: object
+  internal_httpapi.LoginRequest:
+    properties:
+      email:
+        example: admin@drop.local
+        type: string
+      password:
+        example: admin
+        type: string
+    required:
+    - email
+    - password
     type: object
   internal_httpapi.PatchDropRequest:
     properties:
@@ -228,11 +350,49 @@ definitions:
         - private
         example: unlisted
     type: object
+  internal_httpapi.RefreshRequest:
+    properties:
+      refresh_token:
+        type: string
+    required:
+    - refresh_token
+    type: object
+  internal_httpapi.SetUserActiveRequest:
+    properties:
+      active:
+        example: false
+        type: boolean
+    required:
+    - active
+    type: object
+  internal_httpapi.TokenResponse:
+    properties:
+      access_token:
+        type: string
+      expires_at:
+        type: string
+      refresh_expires_at:
+        type: string
+      refresh_token:
+        type: string
+      token_type:
+        example: Bearer
+        type: string
+      user:
+        $ref: '#/definitions/drop_internal_auth.UserInfo'
+    type: object
   internal_httpapi.UploadResponse:
     properties:
       files:
         items:
           $ref: '#/definitions/drop_internal_service.FileInfo'
+        type: array
+    type: object
+  internal_httpapi.UsersResponse:
+    properties:
+      users:
+        items:
+          $ref: '#/definitions/drop_internal_auth.UserInfo'
         type: array
     type: object
   internal_httpapi.VersionsResponse:
@@ -247,8 +407,9 @@ definitions:
     type: object
 info:
   contact: {}
-  description: 'Admin API for Drop: a Drive-like tree where any folder holding a `.drop`
-    descriptor is a publishable drop. Metadata lives in SQL; file bytes live in MinIO.'
+  description: |-
+    Admin API for Drop: a Drive-like tree where any folder holding a `.drop` descriptor is a publishable drop. Metadata lives in SQL; file bytes live in MinIO.
+    Every endpoint outside /v1/auth needs a token. Get one from POST /v1/auth/login and send it as `Authorization: Bearer <token>`.
   title: Drop Admin API
   version: "1.0"
 paths:
@@ -297,6 +458,128 @@ paths:
       summary: Liveness probe
       tags:
       - operation
+  /v1/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Exchanges email and password for an access token and the refresh
+        token that renews it. Rate limited per client address.
+      parameters:
+      - description: Credentials
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_httpapi.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_httpapi.TokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      summary: Open a session
+      tags:
+      - auth
+  /v1/auth/logout:
+    post:
+      consumes:
+      - application/json
+      description: 'Revokes the session behind a refresh token. Answers 204 whether
+        or not the token was recognized: signing out is not a place to learn which
+        tokens are real.'
+      parameters:
+      - description: Refresh token
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_httpapi.RefreshRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: revoked
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      summary: Close a session
+      tags:
+      - auth
+  /v1/auth/me:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/drop_internal_auth.UserInfo'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Describe the caller
+      tags:
+      - auth
+  /v1/auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Exchanges a refresh token for a fresh access token. The refresh
+        token itself keeps working until it expires or its session is revoked.
+      parameters:
+      - description: Refresh token
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_httpapi.RefreshRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_httpapi.TokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      summary: Renew an access token
+      tags:
+      - auth
   /v1/drops:
     get:
       description: Returns a drop's metadata and the files it is composed of.
@@ -645,6 +928,106 @@ paths:
       summary: Upload files to a drop
       tags:
       - files
+  /v1/invitations:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_httpapi.InvitationsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List invitations
+      tags:
+      - invitations
+    post:
+      consumes:
+      - application/json
+      description: 'Issues a single-use link. There is no public sign-up and no email
+        is sent: the link is returned here, once, and handed over by whatever channel
+        you like. Only its hash is stored.'
+      parameters:
+      - description: Who to invite
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_httpapi.CreateInvitationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_httpapi.CreateInvitationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Invite someone
+      tags:
+      - invitations
+  /v1/invitations/{id}:
+    delete:
+      description: Cancels a pending invitation, so its link stops working.
+      parameters:
+      - description: Invitation id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/drop_internal_auth.InvitationInfo'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "410":
+          description: Gone
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Revoke an invitation
+      tags:
+      - invitations
   /v1/nodes:
     delete:
       description: Deletes the node and everything beneath it, including the stored
@@ -737,4 +1120,122 @@ paths:
       summary: Create a folder
       tags:
       - nodes
+  /v1/users:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_httpapi.UsersResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List accounts
+      tags:
+      - users
+  /v1/users/{id}:
+    delete:
+      description: Soft-deletes the account and revokes its sessions. The address
+        becomes free to invite again.
+      parameters:
+      - description: User id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: deleted
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete an account
+      tags:
+      - users
+  /v1/users/{id}/active:
+    patch:
+      consumes:
+      - application/json
+      description: Disabling also revokes the user's sessions, so it takes effect
+        at once rather than whenever their access token expires.
+      parameters:
+      - description: User id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Desired state
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_httpapi.SetUserActiveRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/drop_internal_auth.UserInfo'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Enable or disable an account
+      tags:
+      - users
+securityDefinitions:
+  BearerAuth:
+    description: RS256 access token, as `Bearer <token>`.
+    in: header
+    name: Authorization
+    type: apiKey
 swagger: "2.0"
