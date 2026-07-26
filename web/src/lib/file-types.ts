@@ -16,7 +16,7 @@ export interface FileTypeInfo {
   Icon: LucideIcon;
   /** Tailwind text colour for the icon. */
   className: string;
-  /** Monaco language id. */
+  /** Editor language id; mapped to a grammar in CodeEditor. */
   language: string;
   /** Whether the contents are text we can safely open in the editor. */
   editable: boolean;

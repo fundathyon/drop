@@ -19,8 +19,8 @@ import { fileType } from '@/lib/file-types';
 import { formatSize, joinPath } from '@/lib/format';
 import type { FileInfo } from '@/lib/types';
 
-// Monaco is heavy and browser-only: load it on demand, never during SSR.
-const MonacoEditor = lazy(() => import('@/components/explorer/MonacoEditor'));
+// The editor is browser-only: load it on demand, never during SSR.
+const CodeEditor = lazy(() => import('@/components/explorer/CodeEditor'));
 
 interface Props {
   dropPath: string;
@@ -136,7 +136,7 @@ export function FileEditorDialog({ dropPath, file, onOpenChange, onSaved }: Prop
             <Skeleton className="h-full w-full rounded-none" />
           ) : (
             <Suspense fallback={<Skeleton className="h-full w-full rounded-none" />}>
-              <MonacoEditor
+              <CodeEditor
                 value={content}
                 language={type.language}
                 readOnly={readOnly}
