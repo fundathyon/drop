@@ -13,6 +13,9 @@ import (
 
 type handler struct {
 	svc *service.Service
+	// injectWidget appends the Drop badge to published HTML pages. It is the
+	// one thing the API adds to user content, so it can be switched off.
+	injectWidget bool
 }
 
 // Health godoc
@@ -273,6 +276,60 @@ func (h *handler) patchDrop(c *gin.Context) {
 		Visibility: req.Visibility,
 		Entrypoint: req.Entrypoint,
 	})
+	if err != nil {
+		abortWithServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, detail)
+}
+
+// ListDropVersions godoc
+//
+//	@Summary		List a drop's versions
+//	@Description	Returns the drop's publication history, newest first. Each entry carries a URL that keeps serving that snapshot even after later uploads.
+//	@Tags			drops
+//	@Produce		json
+//	@Param			path	query		string	true	"Drop path"	example(proyectos/arquitectura)
+//	@Success		200		{object}	VersionsResponse
+//	@Failure		400		{object}	ErrorResponse
+//	@Failure		404		{object}	ErrorResponse
+//	@Failure		422		{object}	ErrorResponse
+//	@Router			/v1/drops/versions [get]
+func (h *handler) listDropVersions(c *gin.Context) {
+	path := c.Query("path")
+	versions, err := h.svc.ListVersions(c.Request.Context(), path)
+	if err != nil {
+		abortWithServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, VersionsResponse{Path: path, Versions: versions})
+}
+
+// ActivateDropVersion godoc
+//
+//	@Summary		Republish an earlier version
+//	@Description	Points the drop's URL back at an earlier snapshot. Nothing is deleted: the history keeps every version, including the one that was current.
+//	@Tags			drops
+//	@Accept			json
+//	@Produce		json
+//	@Param			path	query		string					true	"Drop path"	example(proyectos/arquitectura)
+//	@Param			body	body		ActivateVersionRequest	true	"Version to republish"
+//	@Success		200		{object}	service.DropDetail
+//	@Failure		400		{object}	ErrorResponse
+//	@Failure		404		{object}	ErrorResponse
+//	@Failure		422		{object}	ErrorResponse
+//	@Router			/v1/drops/versions/activate [post]
+func (h *handler) activateDropVersion(c *gin.Context) {
+	var req ActivateVersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		abortWithError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		return
+	}
+	if req.Seq == 0 {
+		abortWithError(c, http.StatusBadRequest, "invalid_body", "seq must be 1 or greater")
+		return
+	}
+	detail, err := h.svc.ActivateVersion(c.Request.Context(), c.Query("path"), req.Seq)
 	if err != nil {
 		abortWithServiceError(c, err)
 		return

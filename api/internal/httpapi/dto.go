@@ -27,6 +27,17 @@ type UploadResponse struct {
 	Files []service.FileInfo `json:"files"`
 }
 
+// VersionsResponse is a drop's publication history, newest first.
+type VersionsResponse struct {
+	Path     string                `json:"path" example:"proyectos/arquitectura"`
+	Versions []service.VersionInfo `json:"versions"`
+}
+
+// ActivateVersionRequest republishes an earlier version of a drop.
+type ActivateVersionRequest struct {
+	Seq uint `json:"seq" binding:"required" example:"2"`
+}
+
 // CreateFolderRequest creates a plain organizational folder.
 type CreateFolderRequest struct {
 	Parent string `json:"parent" example:"proyectos"`
