@@ -1364,9 +1364,38 @@ const docTemplate = `{
                 "VisibilityPrivate"
             ]
         },
+        "drop_internal_service.Access": {
+            "type": "string",
+            "enum": [
+                "",
+                "viewer",
+                "editor",
+                "owner"
+            ],
+            "x-enum-varnames": [
+                "AccessNone",
+                "AccessViewer",
+                "AccessEditor",
+                "AccessOwner"
+            ]
+        },
         "drop_internal_service.DropDetail": {
             "type": "object",
             "properties": {
+                "access": {
+                    "description": "Access is what the caller may do with it: owner, editor or viewer. The\ninterface hides the actions it does not cover.",
+                    "enum": [
+                        "owner",
+                        "editor",
+                        "viewer"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/drop_internal_service.Access"
+                        }
+                    ],
+                    "example": "owner"
+                },
                 "entrypoint_missing": {
                     "description": "EntrypointMissing marks a drop whose entrypoint names no file it holds.\nIts URL answers 404 until a page by that name arrives, or the metadata\nis pointed at one that exists.",
                     "type": "boolean",
@@ -1396,6 +1425,11 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "arquitectura"
+                },
+                "owner": {
+                    "description": "Owner is whose drive it lives in. A path only identifies a node together\nwith this, since every user has their own tree.",
+                    "type": "integer",
+                    "example": 1
                 },
                 "path": {
                     "type": "string",
@@ -1499,6 +1533,11 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "arquitectura"
+                },
+                "owner": {
+                    "description": "Owner is whose drive it lives in. A path only identifies a node together\nwith this, since every user has their own tree.",
+                    "type": "integer",
+                    "example": 1
                 },
                 "path": {
                     "type": "string",

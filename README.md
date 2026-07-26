@@ -100,6 +100,37 @@ make clean     # borra binarios, la DB local y los volúmenes de MinIO
 | **Swagger UI** | **http://localhost:8000/docs** |
 | Consola de MinIO | http://localhost:9001 (`dropadmin` / `dropadmin123`) |
 
+## Unidades y compartición
+
+Cada cuenta tiene **su propia unidad**. El árbol no es global: dos personas
+pueden tener las dos una carpeta `Proyectos` y son carpetas distintas. Nadie ve
+la unidad de nadie, **tampoco un administrador** — administrar cuentas no es lo
+mismo que leer archivos ajenos.
+
+Una carpeta o un drop se puede **compartir** con otra cuenta, en dos niveles:
+
+| Nivel | Puede |
+|---|---|
+| **lector** | abrir y descargar |
+| **editor** | además subir, editar y borrar dentro |
+
+- El permiso se aplica a **todo lo que cuelga** de lo compartido, así que
+  compartir una carpeta comparte los drops que contiene.
+- Comparten el dueño **y los editores**, para que un equipo no dependa de una
+  sola persona. Un editor solo puede revocar lo que él mismo concedió.
+- Un editor **no puede borrar la raíz compartida**: es lo único que podría
+  hacer sin querer y el dueño no podría deshacer.
+- Lo que te comparten aparece en **Compartido conmigo**, con su dueño y tu
+  nivel de acceso.
+
+Como una ruta ya no identifica un nodo por sí sola, las URLs del panel y de la
+API llevan `owner=<id>` cuando apuntan a la unidad de otra persona. Sin ese
+parámetro, la ruta es la tuya.
+
+La **visibilidad de un drop publicado es independiente de todo esto**: un drop
+público lo sigue siendo para el mundo en `/d/{slug}/`, se comparta o no. Una
+cosa es quién lo administra y otra quién lo lee.
+
 ## Autenticación
 
 Todo pide credenciales menos lo que tiene que ser público: `/healthz`, los
@@ -130,18 +161,22 @@ contraseña.
 ## Endpoints
 
 ```
-GET    /                            panel de administración
+GET    /                            panel de administración (tu unidad)
+GET    /?owner=<id>&path=           una carpeta o drop de otra unidad
+GET    /compartido                  lo que otros han compartido contigo
 GET    /login                       entrar (público)
 GET    /invitacion?token=           aceptar una invitación (público)
 GET    /admin/edit?path=&name=      editor de un archivo del drop
 GET    /admin/usuarios              cuentas e invitaciones (solo admin)
+POST   /admin/share                compartir  {owner, path, user_id, access}
+POST   /admin/unshare               revocar    {owner, path, user_id}
 POST   /admin/…                     acciones del panel (formularios; redirigen)
 GET    /healthz
 GET    /d/{slug}/                   abrir un drop publicado (su entrypoint)
 GET    /d/{slug}/{ruta}             un archivo concreto del drop
 GET    /d/{slug}/@{n}/{ruta}        lo mismo, anclado a la versión n
 POST   /v1/drops/upload             publicar un drop; si ya existe, nueva versión
-GET    /v1/nodes?path=              listar hijos de una carpeta
+GET    /v1/nodes?path=              listar hijos de una carpeta de tu unidad
 POST   /v1/nodes                    crear carpeta          {parent, name}
 DELETE /v1/nodes?path=              borrar carpeta o drop (recursivo)
 GET    /v1/drops?path=              metadata + archivos + historial de un drop

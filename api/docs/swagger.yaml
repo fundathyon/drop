@@ -95,8 +95,31 @@ definitions:
     - VisibilityPublic
     - VisibilityUnlisted
     - VisibilityPrivate
+  drop_internal_service.Access:
+    enum:
+    - ""
+    - viewer
+    - editor
+    - owner
+    type: string
+    x-enum-varnames:
+    - AccessNone
+    - AccessViewer
+    - AccessEditor
+    - AccessOwner
   drop_internal_service.DropDetail:
     properties:
+      access:
+        allOf:
+        - $ref: '#/definitions/drop_internal_service.Access'
+        description: |-
+          Access is what the caller may do with it: owner, editor or viewer. The
+          interface hides the actions it does not cover.
+        enum:
+        - owner
+        - editor
+        - viewer
+        example: owner
       entrypoint_missing:
         description: |-
           EntrypointMissing marks a drop whose entrypoint names no file it holds.
@@ -120,6 +143,12 @@ definitions:
       name:
         example: arquitectura
         type: string
+      owner:
+        description: |-
+          Owner is whose drive it lives in. A path only identifies a node together
+          with this, since every user has their own tree.
+        example: 1
+        type: integer
       path:
         example: proyectos/arquitectura
         type: string
@@ -197,6 +226,12 @@ definitions:
       name:
         example: arquitectura
         type: string
+      owner:
+        description: |-
+          Owner is whose drive it lives in. A path only identifies a node together
+          with this, since every user has their own tree.
+        example: 1
+        type: integer
       path:
         example: proyectos/arquitectura
         type: string
