@@ -67,6 +67,9 @@ make clean     # borra binarios, la DB local y los volúmenes de MinIO
 
 ```
 GET    /healthz
+GET    /d/{slug}/            abrir un drop publicado (su entrypoint)
+GET    /d/{slug}/{ruta}      un archivo concreto del drop
+POST   /v1/drops/upload      crear un drop con sus archivos (multipart)
 GET    /v1/nodes?path=       listar hijos de una carpeta
 POST   /v1/nodes             crear carpeta          {parent, name}
 DELETE /v1/nodes?path=       borrar carpeta o drop (recursivo)
@@ -96,6 +99,7 @@ Cada app lee su propio `.env` ([`api/.env`](api/.env), [`web/.env`](web/.env)).
 |---|---|---|
 | `DROP_HTTP_ADDR` | `:8000` | Dirección de escucha |
 | `DROP_DATABASE_DSN` | `drop.db` | Base SQLite |
+| `DROP_PUBLIC_BASE_URL` | `http://localhost:8000` | Origen desde el que se sirven los drops; es la URL que devuelve la API |
 | `DROP_CORS_ORIGINS` | `http://localhost:3000` | Orígenes permitidos, separados por coma |
 | `DROP_S3_ENDPOINT` | `localhost:9000` | Endpoint de MinIO |
 | `DROP_S3_ACCESS_KEY` / `DROP_S3_SECRET_KEY` | `dropadmin` / `dropadmin123` | Credenciales |
