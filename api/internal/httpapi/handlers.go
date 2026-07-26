@@ -3,6 +3,7 @@ package httpapi
 import (
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -10,6 +11,13 @@ import (
 	"drop/internal/model"
 	"drop/internal/service"
 )
+
+// apiRef builds the reference a JSON request addresses: a path, plus the
+// drive it lives in when the caller reached it through a share.
+func apiRef(c *gin.Context, path string) service.Ref {
+	owner, _ := strconv.ParseUint(c.Query("owner"), 10, 64)
+	return service.Ref{Owner: uint(owner), Path: path}
+}
 
 type handler struct {
 	svc *service.Service
@@ -44,7 +52,7 @@ func (h *handler) health(c *gin.Context) {
 //	@Router			/v1/nodes [get]
 func (h *handler) listNodes(c *gin.Context) {
 	path := c.Query("path")
-	nodes, err := h.svc.List(c.Request.Context(), path)
+	nodes, err := h.svc.List(c.Request.Context(), actorOf(c), apiRef(c, path))
 	if err != nil {
 		abortWithServiceError(c, err)
 		return
@@ -75,7 +83,7 @@ func (h *handler) createFolder(c *gin.Context) {
 		abortWithError(c, http.StatusBadRequest, "invalid_body", "name is required")
 		return
 	}
-	node, err := h.svc.CreateFolder(c.Request.Context(), req.Parent, req.Name)
+	node, err := h.svc.CreateFolder(c.Request.Context(), actorOf(c), apiRef(c, req.Parent), req.Name)
 	if err != nil {
 		abortWithServiceError(c, err)
 		return
@@ -100,7 +108,7 @@ func (h *handler) deleteNode(c *gin.Context) {
 		abortWithError(c, http.StatusBadRequest, "invalid_path", "path is required")
 		return
 	}
-	if err := h.svc.Delete(c.Request.Context(), path); err != nil {
+	if err := h.svc.Delete(c.Request.Context(), actorOf(c), apiRef(c, path)); err != nil {
 		abortWithServiceError(c, err)
 		return
 	}
@@ -120,7 +128,7 @@ func (h *handler) deleteNode(c *gin.Context) {
 //	@Failure		422		{object}	ErrorResponse
 //	@Router			/v1/drops [get]
 func (h *handler) getDrop(c *gin.Context) {
-	detail, err := h.svc.GetDrop(c.Request.Context(), c.Query("path"))
+	detail, err := h.svc.GetDrop(c.Request.Context(), actorOf(c), apiRef(c, c.Query("path")))
 	if err != nil {
 		abortWithServiceError(c, err)
 		return
@@ -151,8 +159,8 @@ func (h *handler) createDrop(c *gin.Context) {
 		abortWithError(c, http.StatusBadRequest, "invalid_body", "name is required")
 		return
 	}
-	detail, err := h.svc.CreateDrop(c.Request.Context(), service.DropInput{
-		Parent:     req.Parent,
+	detail, err := h.svc.CreateDrop(c.Request.Context(), actorOf(c), service.DropInput{
+		ParentRef:  apiRef(c, req.Parent),
 		Name:       req.Name,
 		Title:      req.Title,
 		Visibility: req.Visibility,
@@ -229,8 +237,8 @@ func (h *handler) uploadDrop(c *gin.Context) {
 		})
 	}
 
-	detail, err := h.svc.UploadDrop(c.Request.Context(), service.UploadDropInput{
-		Parent:     firstValue(form.Value["parent"]),
+	detail, err := h.svc.UploadDrop(c.Request.Context(), actorOf(c), service.UploadDropInput{
+		ParentRef:  apiRef(c, firstValue(form.Value["parent"])),
 		Name:       firstValue(form.Value["name"]),
 		Title:      title,
 		Entrypoint: firstValue(form.Value["entrypoint"]),
@@ -271,7 +279,7 @@ func (h *handler) patchDrop(c *gin.Context) {
 		abortWithError(c, http.StatusBadRequest, "invalid_body", err.Error())
 		return
 	}
-	detail, err := h.svc.UpdateDropMeta(c.Request.Context(), c.Query("path"), service.DropPatch{
+	detail, err := h.svc.UpdateDropMeta(c.Request.Context(), actorOf(c), apiRef(c, c.Query("path")), service.DropPatch{
 		Title:      req.Title,
 		Visibility: req.Visibility,
 		Entrypoint: req.Entrypoint,
@@ -297,7 +305,7 @@ func (h *handler) patchDrop(c *gin.Context) {
 //	@Router			/v1/drops/versions [get]
 func (h *handler) listDropVersions(c *gin.Context) {
 	path := c.Query("path")
-	versions, err := h.svc.ListVersions(c.Request.Context(), path)
+	versions, err := h.svc.ListVersions(c.Request.Context(), actorOf(c), apiRef(c, path))
 	if err != nil {
 		abortWithServiceError(c, err)
 		return
@@ -329,7 +337,7 @@ func (h *handler) activateDropVersion(c *gin.Context) {
 		abortWithError(c, http.StatusBadRequest, "invalid_body", "seq must be 1 or greater")
 		return
 	}
-	detail, err := h.svc.ActivateVersion(c.Request.Context(), c.Query("path"), req.Seq)
+	detail, err := h.svc.ActivateVersion(c.Request.Context(), actorOf(c), apiRef(c, c.Query("path")), req.Seq)
 	if err != nil {
 		abortWithServiceError(c, err)
 		return
@@ -349,7 +357,7 @@ func (h *handler) activateDropVersion(c *gin.Context) {
 //	@Failure		404		{object}	ErrorResponse
 //	@Router			/v1/files [get]
 func (h *handler) downloadFile(c *gin.Context) {
-	body, info, err := h.svc.OpenFile(c.Request.Context(), c.Query("path"))
+	body, info, err := h.svc.OpenFile(c.Request.Context(), actorOf(c), apiRef(c, c.Query("path")))
 	if err != nil {
 		abortWithServiceError(c, err)
 		return
@@ -400,7 +408,7 @@ func (h *handler) uploadFiles(c *gin.Context) {
 			abortWithError(c, http.StatusBadRequest, "invalid_body", err.Error())
 			return
 		}
-		info, err := h.svc.SaveFile(c.Request.Context(), path, fh.Filename, f,
+		info, err := h.svc.SaveFile(c.Request.Context(), actorOf(c), apiRef(c, path), fh.Filename, f,
 			fh.Size, fh.Header.Get("Content-Type"))
 		_ = f.Close()
 		if err != nil {
@@ -424,7 +432,7 @@ func (h *handler) uploadFiles(c *gin.Context) {
 //	@Failure		404		{object}	ErrorResponse
 //	@Router			/v1/files [delete]
 func (h *handler) deleteFile(c *gin.Context) {
-	if err := h.svc.DeleteFile(c.Request.Context(), c.Query("path")); err != nil {
+	if err := h.svc.DeleteFile(c.Request.Context(), actorOf(c), apiRef(c, c.Query("path"))); err != nil {
 		abortWithServiceError(c, err)
 		return
 	}

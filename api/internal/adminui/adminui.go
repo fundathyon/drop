@@ -12,6 +12,8 @@ import (
 	"html/template"
 	"io"
 	"io/fs"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,7 +30,7 @@ func Static() (fs.FS, error) { return fs.Sub(files, "static") }
 // pages are the template files that each supply a "content" and an "actions"
 // block. Every one is parsed together with the layout into its own set, because
 // a single set cannot hold two definitions of the same block name.
-var pages = []string{"explorer", "drop", "editor", "login", "invite", "users"}
+var pages = []string{"explorer", "drop", "editor", "shared", "login", "invite", "users"}
 
 // Renderer holds the parsed templates.
 type Renderer struct {
@@ -101,23 +103,31 @@ type Flash struct {
 	Text string
 }
 
-// Crumb is one step of the breadcrumb.
+// Crumb is one step of the breadcrumb. It carries the drive as well as the
+// path, because a link back up a shared folder has to stay in its owner's
+// tree rather than jumping to the reader's own.
 type Crumb struct {
-	Name string
-	Path string
+	Name  string
+	Path  string
+	Owner uint
 }
 
 // Base is what every page needs: the shell's title, where we are, and any
 // pending flash.
 type Base struct {
-	Title  string
-	Path   string
+	Title string
+	Path  string
+	// Owner is whose drive the page is showing; zero is the viewer's own.
+	Owner  uint
 	Crumbs []Crumb
 	Flash  *Flash
 	// User is who is signed in. Nil on the pages reached without a session —
 	// the login form and the invitation link — which is what tells the layout
 	// to leave out the navigation.
 	User *auth.UserInfo
+	// Shared marks the "shared with me" section, so the drive tabs can say
+	// which one you are in.
+	Shared bool
 }
 
 // LoginPage is the sign-in form.
@@ -168,34 +178,85 @@ type ExplorerPage struct {
 type DropPage struct {
 	Base
 	Detail service.DropDetail
+	// Shares is who else has access. Empty for someone who could not grant it
+	// anyway, who has no business seeing the list.
+	Shares []service.ShareInfo
+	// People are the accounts the drop can be shared with, for the picker.
+	People []auth.UserInfo
+}
+
+// SharedPage lists what other people granted the viewer.
+type SharedPage struct {
+	Base
+	Nodes []service.SharedNode
 }
 
 // EditorPage shows one stored file: its text when we can edit it, a preview
 // when it is an image, and a download link otherwise.
 type EditorPage struct {
 	Base
-	// DropPath is the drop the file belongs to, which is where saving posts to.
-	DropPath string
-	Name     string
-	File     service.FileInfo
-	Type     FileType
-	Content  string
+	// DropPath is the drop the file belongs to, which is where saving posts to,
+	// and DropOwner is whose drive that is.
+	DropPath  string
+	DropOwner uint
+	Name      string
+	File      service.FileInfo
+	Type      FileType
+	Content   string
 	// RawURL downloads the file as stored.
 	RawURL string
+	// ReadOnly hides the save controls for someone who may look but not write.
+	ReadOnly bool
 }
 
-// Breadcrumbs splits a path into its navigable steps. The root is added by the
-// template, so an empty path yields no crumbs.
-func Breadcrumbs(path string) []Crumb {
-	if path == "" {
+// Breadcrumbs splits a reference into its navigable steps. The root is added
+// by the template, so an empty path yields no crumbs.
+//
+// Every step keeps the drive it belongs to: walking up out of a shared folder
+// would otherwise land on the viewer's own tree at the same path, which is a
+// different place entirely.
+func Breadcrumbs(ref service.Ref) []Crumb {
+	if ref.Path == "" {
 		return nil
 	}
-	parts := strings.Split(path, "/")
+	parts := strings.Split(ref.Path, "/")
 	crumbs := make([]Crumb, 0, len(parts))
 	for i, part := range parts {
-		crumbs = append(crumbs, Crumb{Name: part, Path: strings.Join(parts[:i+1], "/")})
+		crumbs = append(crumbs, Crumb{
+			Name:  part,
+			Path:  strings.Join(parts[:i+1], "/"),
+			Owner: ref.Owner,
+		})
 	}
 	return crumbs
+}
+
+// URLFor builds a link to a path inside a drive.
+//
+// It returns template.URL rather than a string because the result is a whole
+// URL, not a value inside one: escaped as an ordinary attribute the "&" and
+// "=" would arrive as literal text and every parameter after the first would
+// be swallowed. The query is assembled here with url.Values, so what is being
+// vouched for is something this function built.
+func URLFor(base string, owner uint, path string) template.URL {
+	return template.URL(base + "?" + driveQuery(owner, path).Encode())
+}
+
+// EditURL points at the editor, which needs the file name apart from the drop
+// because a name may itself contain slashes.
+func EditURL(owner uint, dropPath, name string) template.URL {
+	q := driveQuery(owner, dropPath)
+	q.Set("name", name)
+	return template.URL("/admin/edit?" + q.Encode())
+}
+
+func driveQuery(owner uint, path string) url.Values {
+	q := url.Values{}
+	if owner != 0 {
+		q.Set("owner", strconv.FormatUint(uint64(owner), 10))
+	}
+	q.Set("path", path)
+	return q
 }
 
 // ParentOf is the containing folder of a path, "" for a top-level node.
@@ -228,6 +289,8 @@ func funcs(version string) template.FuncMap {
 		"parentOf":   ParentOf,
 		"asset":      func(name string) string { return StaticPrefix + name + "?v=" + version },
 		"dict":       dict,
+		"urlFor":     URLFor,
+		"editURL":    EditURL,
 	}
 }
 

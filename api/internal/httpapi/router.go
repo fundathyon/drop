@@ -71,8 +71,8 @@ func NewRouter(svc *service.Service, cfg Config) (http.Handler, error) {
 	limiter := newAttemptLimiter(loginAttempts, loginWindow)
 
 	h := &handler{svc: svc, injectWidget: cfg.InjectWidget}
-	a := &adminHandler{svc: svc, ui: ui}
-	auths := &authHandler{svc: cfg.Auth, ui: ui, cookieSecure: cfg.CookieSecure, logins: limiter}
+	a := &adminHandler{svc: svc, accounts: cfg.Auth, ui: ui}
+	auths := &authHandler{svc: cfg.Auth, tree: svc, ui: ui, cookieSecure: cfg.CookieSecure, logins: limiter}
 	apiAuth := &apiAuthHandler{svc: cfg.Auth, logins: limiter}
 
 	session := requireSession(cfg.Auth)
@@ -149,6 +149,7 @@ func NewRouter(svc *service.Service, cfg Config) (http.Handler, error) {
 	// The admin. It is server-rendered, so every route it needs is registered
 	// here; anything else is a real 404 rather than a page.
 	r.GET("/", session, a.index)
+	r.GET("/compartido", session, a.shared)
 	r.GET("/admin/edit", session, a.edit)
 	admin := r.Group("/admin", session)
 	{
@@ -160,6 +161,8 @@ func NewRouter(svc *service.Service, cfg Config) (http.Handler, error) {
 		admin.POST("/files", a.uploadFiles)
 		admin.POST("/files/save", a.saveFile)
 		admin.POST("/files/delete", a.deleteFile)
+		admin.POST("/share", a.share)
+		admin.POST("/unshare", a.unshare)
 
 		// Accounts and invitations, administrators only.
 		accounts := admin.Group("/usuarios", requireAdminPage)

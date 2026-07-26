@@ -34,6 +34,12 @@ func abortWithServiceError(c *gin.Context, err error) {
 		abortWithError(c, http.StatusUnprocessableEntity, "not_folder", "path is not a folder")
 	case errors.Is(err, service.ErrInvalidPath):
 		abortWithError(c, http.StatusBadRequest, "invalid_path", "invalid path or name")
+	case errors.Is(err, service.ErrForbidden):
+		// Distinct from not_found on purpose: this one is reached only once the
+		// caller can already see the thing exists, so saying so leaks nothing.
+		abortWithError(c, http.StatusForbidden, "forbidden", "not allowed on this resource")
+	case errors.Is(err, service.ErrCannotShareWithSelf):
+		abortWithError(c, http.StatusConflict, "already_owner", "the owner already has access")
 	default:
 		_ = c.Error(err)
 		abortWithError(c, http.StatusInternalServerError, "internal_error", "unexpected error")

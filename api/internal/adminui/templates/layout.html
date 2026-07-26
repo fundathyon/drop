@@ -25,16 +25,29 @@
             {{icon "package" ""}}Drop <span class="muted">admin</span>
           </a>
 
+          <nav class="drives" aria-label="Unidades">
+            <a href="/" class="{{if not .Shared}}current{{end}}">
+              {{icon "house" ""}}<span>Mi unidad</span>
+            </a>
+            <a href="/compartido" class="{{if .Shared}}current{{end}}">
+              {{icon "users" ""}}<span>Compartido conmigo</span>
+            </a>
+          </nav>
+
           {{block "nav" .}}
             <nav class="breadcrumb spacer" aria-label="Ruta">
               {{if .Crumbs}}
-                <a href="/">{{icon "house" ""}}</a>
+                {{if .Owner}}
+                  <a href="/compartido">{{icon "users" ""}}</a>
+                {{else}}
+                  <a href="/">{{icon "house" ""}}</a>
+                {{end}}
                 {{range $c := .Crumbs}}
                   {{icon "chevron-right" ""}}
                   {{if eq $c.Path $.Path}}
                     <span class="current" aria-current="page">{{$c.Name}}</span>
                   {{else}}
-                    <a href="/?path={{$c.Path}}">{{$c.Name}}</a>
+                    <a href="{{urlFor "/" $c.Owner $c.Path}}">{{$c.Name}}</a>
                   {{end}}
                 {{end}}
               {{else}}

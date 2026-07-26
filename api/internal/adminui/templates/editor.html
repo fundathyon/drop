@@ -1,5 +1,5 @@
 {{define "actions"}}
-  <a class="btn btn-outline btn-sm" href="/?path={{.DropPath}}">
+  <a class="btn btn-outline btn-sm" href="{{urlFor "/" .DropOwner .DropPath}}">
     {{icon "arrow-left" ""}}Volver al drop
   </a>
   <a class="btn btn-outline btn-sm" href="{{.RawURL}}" target="_blank" rel="noopener">
@@ -24,7 +24,7 @@
           {{.Type.Label}} · {{formatSize .File.Size}} · {{formatDate .File.ModifiedAt}}
         </span>
         <span class="push"></span>
-        <a class="btn btn-outline btn-sm" href="/?path={{.DropPath}}">Cancelar</a>
+        <a class="btn btn-outline btn-sm" href="{{urlFor "/" .DropOwner .DropPath}}">Cancelar</a>
         <button type="submit" class="btn btn-sm">{{icon "save" ""}}Guardar</button>
       </div>
     </form>

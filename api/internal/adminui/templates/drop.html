@@ -1,19 +1,29 @@
 {{define "actions"}}
-  <button type="button" class="btn btn-outline btn-sm" data-open="edit-meta">
-    {{icon "pencil" ""}}Metadata
-  </button>
-  <button type="button" class="btn btn-outline btn-sm" data-open="upload-files">
-    {{icon "upload" ""}}Subir archivo
-  </button>
+  {{if .Detail.Access.CanShare}}
+    <button type="button" class="btn btn-outline btn-sm" data-open="share-drop">
+      {{icon "users" ""}}Compartir
+    </button>
+  {{end}}
+  {{if .Detail.Access.CanWrite}}
+    <button type="button" class="btn btn-outline btn-sm" data-open="edit-meta">
+      {{icon "pencil" ""}}Metadata
+    </button>
+    <button type="button" class="btn btn-outline btn-sm" data-open="upload-files">
+      {{icon "upload" ""}}Subir archivo
+    </button>
+  {{end}}
+  {{if eq .Detail.Access "owner"}}
   <form class="inline-form" method="post" action="/admin/nodes/delete"
         data-confirm-title="¿Eliminar este drop?"
         data-confirm-text="Se eliminarán el drop y todos sus archivos. Esta acción no se puede deshacer.">
+    <input type="hidden" name="owner" value="{{.Detail.Owner}}" />
     <input type="hidden" name="path" value="{{.Detail.Path}}" />
     <input type="hidden" name="return" value="{{parentOf .Detail.Path}}" />
     <button type="submit" class="btn btn-destructive btn-sm">
       {{icon "trash-2" ""}}Eliminar drop
     </button>
   </form>
+  {{end}}
 {{end}}
 
 {{define "content"}}
@@ -31,6 +41,21 @@
         </a>
       {{end}}
     </div>
+
+    {{if ne .Detail.Access "owner"}}
+      <p class="notice notice-info" role="status">
+        {{icon "users" ""}}
+        <span>
+          Este drop está en la unidad de otra persona y lo ves porque te lo han
+          compartido como <strong>{{if eq .Detail.Access "editor"}}editor{{else}}lector{{end}}</strong>.
+          {{if eq .Detail.Access "editor"}}
+            Puedes cambiar su contenido, pero no eliminarlo.
+          {{else}}
+            Solo puedes abrirlo y descargarlo.
+          {{end}}
+        </span>
+      </p>
+    {{end}}
 
     {{if .Detail.EntrypointMissing}}
       <p class="notice" role="status">
@@ -69,7 +94,7 @@
                 <td class="name">
                   {{/* The drop and the name travel apart: a file name can hold
                        slashes, so a single path cannot say where one ends. */}}
-                  <a href="/admin/edit?path={{$.Detail.Path}}&amp;name={{.Name}}">
+                  <a href="{{editURL $.Detail.Owner $.Detail.Path .Name}}">
                     {{icon $type.Icon $type.Class}}
                     {{.Name}}
                     {{if .Generated}}
@@ -82,15 +107,16 @@
                 <td class="muted">{{formatDate .ModifiedAt}}</td>
                 <td class="right">
                   <span class="row-actions">
-                    <a class="btn btn-ghost btn-icon" href="/v1/files?path={{$full}}"
+                    <a class="btn btn-ghost btn-icon" href="{{urlFor "/v1/files" $.Detail.Owner $full}}"
                        target="_blank" rel="noopener" aria-label="Descargar {{.Name}}">
                       {{icon "download" ""}}
                     </a>
                     {{/* The descriptor is maintained by the API — nothing to delete here. */}}
-                    {{if not .Generated}}
+                    {{if and (not .Generated) $.Detail.Access.CanWrite}}
                       <form class="inline-form" method="post" action="/admin/files/delete"
                             data-confirm-title="¿Eliminar archivo?"
                             data-confirm-text="Se eliminará &quot;{{.Name}}&quot; de este drop. Esta acción no se puede deshacer.">
+                        <input type="hidden" name="owner" value="{{$.Detail.Owner}}" />
                         <input type="hidden" name="path" value="{{$full}}" />
                         <input type="hidden" name="return" value="{{$.Detail.Path}}" />
                         <button type="submit" class="btn btn-ghost btn-icon"
@@ -129,11 +155,12 @@
                         {{icon "external-link" ""}}Ver
                       </a>
                     {{end}}
-                    {{if not .Current}}
+                    {{if and (not .Current) $.Detail.Access.CanWrite}}
                       <form class="inline-form" method="post" action="/admin/drops/restore"
                             data-confirm-title="¿Volver a publicar la versión {{.Seq}}?"
                             data-confirm-text="La URL del drop pasará a servir la versión {{.Seq}}. No se borra nada: la versión actual seguirá en el historial."
                             data-confirm-label="Restaurar" data-confirm-variant="default">
+                        <input type="hidden" name="owner" value="{{$.Detail.Owner}}" />
                         <input type="hidden" name="path" value="{{$.Detail.Path}}" />
                         <input type="hidden" name="seq" value="{{.Seq}}" />
                         <button type="submit" class="btn btn-outline btn-sm">
@@ -157,6 +184,7 @@
       <p class="dialog-description">
         Se guarda en el archivo <code>.drop</code> junto a los archivos del drop.
       </p>
+      <input type="hidden" name="owner" value="{{.Detail.Owner}}" />
       <input type="hidden" name="path" value="{{.Detail.Path}}" />
       <div class="dialog-body">
         <div class="field">
@@ -197,6 +225,7 @@
       <p class="dialog-description">
         Un archivo con el mismo nombre reemplaza al que ya está en el drop.
       </p>
+      <input type="hidden" name="owner" value="{{.Detail.Owner}}" />
       <input type="hidden" name="path" value="{{.Detail.Path}}" />
       <div class="dialog-body">
         <div class="field">
@@ -210,4 +239,65 @@
       </div>
     </form>
   </dialog>
+
+  {{if .Detail.Access.CanShare}}
+    <dialog id="share-drop">
+      <h2 class="dialog-title">Compartir "{{.Detail.Meta.Title}}"</h2>
+      <p class="dialog-description">
+        Quien reciba el acceso lo verá en su sección <strong>Compartido
+        conmigo</strong>. Compartir un drop no cambia su visibilidad pública.
+      </p>
+
+      <div class="dialog-body">
+        {{if .Shares}}
+          <div class="share-list">
+            {{range .Shares}}
+              <div class="share-row">
+                <span class="share-who">
+                  {{icon "user" "ft-muted"}}
+                  <span>{{.Name}} <span class="muted">{{.Email}}</span></span>
+                </span>
+                <span class="badge badge-outline">{{if eq .Access "editor"}}editor{{else}}lector{{end}}</span>
+                <form class="inline-form" method="post" action="/admin/unshare">
+                  <input type="hidden" name="owner" value="{{$.Detail.Owner}}" />
+                  <input type="hidden" name="path" value="{{$.Detail.Path}}" />
+                  <input type="hidden" name="user_id" value="{{.UserID}}" />
+                  <button type="submit" class="btn btn-ghost btn-icon"
+                          aria-label="Quitar acceso a {{.Email}}">{{icon "x" ""}}</button>
+                </form>
+              </div>
+            {{end}}
+          </div>
+        {{else}}
+          <p class="hint">Todavía no lo has compartido con nadie.</p>
+        {{end}}
+
+        <form method="post" action="/admin/share" class="share-form">
+          <input type="hidden" name="owner" value="{{.Detail.Owner}}" />
+          <input type="hidden" name="path" value="{{.Detail.Path}}" />
+          <div class="field">
+            <label for="share-user">Persona</label>
+            <select id="share-user" name="user_id" required>
+              <option value="">Elige una cuenta…</option>
+              {{range .People}}
+                <option value="{{.ID}}">{{.Name}} — {{.Email}}</option>
+              {{end}}
+            </select>
+          </div>
+          <div class="field">
+            <label for="share-access">Acceso</label>
+            <select id="share-access" name="access">
+              <option value="viewer" selected>lector — abrir y descargar</option>
+              <option value="editor">editor — además subir, editar y borrar dentro</option>
+            </select>
+          </div>
+          <button type="submit" class="btn">Compartir</button>
+        </form>
+      </div>
+
+      <div class="dialog-footer">
+        <button type="button" class="btn btn-outline" data-close>Cerrar</button>
+      </div>
+    </dialog>
+  {{end}}
 {{end}}

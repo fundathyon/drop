@@ -13,11 +13,14 @@ import (
 	"drop/internal/adminui"
 	"drop/internal/auth"
 	"drop/internal/model"
+	"drop/internal/service"
 )
 
 type authHandler struct {
 	svc *auth.Service
-	ui  *adminui.Renderer
+	// tree is needed only to drop a removed account's shares.
+	tree *service.Service
+	ui   *adminui.Renderer
 	// cookieSecure marks the session cookie Secure; off for plain-HTTP localhost.
 	cookieSecure bool
 	logins       *attemptLimiter
@@ -261,6 +264,12 @@ func (a *authHandler) deleteUser(c *gin.Context) {
 		return
 	}
 	if err := a.svc.DeleteUser(c.Request.Context(), uint(id), me.ID); err != nil {
+		a.failUsers(c, err)
+		return
+	}
+	// Their grants go too, in both directions: a deleted account must not keep
+	// showing up on anyone's share list, nor keep access to anything.
+	if err := a.tree.RevokeSharesForUser(c.Request.Context(), uint(id)); err != nil {
 		a.failUsers(c, err)
 		return
 	}
