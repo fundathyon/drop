@@ -64,7 +64,9 @@ func Load() Config {
 		DatabaseDSN:   env("DROP_DATABASE_DSN", "drop.db"),
 		PublicBaseURL: strings.TrimSuffix(env("DROP_PUBLIC_BASE_URL", "http://localhost:8000"), "/"),
 		InjectWidget:  envBool("DROP_INJECT_WIDGET", true),
-		CORSOrigins:   splitList(env("DROP_CORS_ORIGINS", "http://localhost:3000")),
+		// Empty by default: the admin is served by this same process, so
+		// nothing needs cross-origin access until a third-party client does.
+		CORSOrigins: splitList(os.Getenv("DROP_CORS_ORIGINS")),
 		S3: S3{
 			Endpoint:  env("DROP_S3_ENDPOINT", "localhost:9000"),
 			AccessKey: env("DROP_S3_ACCESS_KEY", "dropadmin"),

@@ -89,4 +89,4 @@ upload "demo-landing" "app.js" \
   'document.getElementById("hint").textContent = "Servido desde MinIO vía Drop.";' \
   "text/javascript"
 
-echo "Listo. Abre http://localhost:3000 para verlo."
+echo "Listo. Abre http://localhost:8000 para verlo."
