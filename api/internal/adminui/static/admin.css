@@ -562,18 +562,45 @@ td.right {
   text-decoration: underline;
 }
 
-.link-muted {
-  color: var(--muted-foreground);
-  cursor: default;
-}
-
-.link-muted:hover {
-  text-decoration: none;
-}
-
 .link svg {
   width: 0.75rem;
   height: 0.75rem;
+}
+
+/* The address and its copy button read as one control, so they stay together
+   when the row wraps. */
+.link-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+/* Sized to the address beside it rather than to the toolbar buttons: at
+   2rem it would set the height of the whole row. */
+.copy-link {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--muted-foreground);
+}
+
+.copy-link svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+/* Two icons in the same slot: the tick replaces the clipboard for a moment
+   after a copy. Spelled out because a display rule of our own would otherwise
+   beat the [hidden] attribute the script toggles. */
+.copy-link span {
+  display: inline-flex;
+}
+
+.copy-link span[hidden] {
+  display: none;
+}
+
+.copy-link [data-copy-done] {
+  color: var(--primary);
 }
 
 /* ---------- forms ---------- */

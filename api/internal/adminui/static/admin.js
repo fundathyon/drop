@@ -81,24 +81,66 @@
 
   /* ---------- copy to clipboard ---------- */
 
-  // The invitation link is shown once and never again, so copying it has to be
-  // one click. The field stays selectable for the case where the clipboard API
-  // is unavailable (it needs a secure context).
+  // Two callers: the invitation link, shown once and never again, which lives
+  // in a field the button copies from; and a drop's address, which the button
+  // carries itself in data-copy.
   document.querySelectorAll('[data-copy]').forEach((button) => {
     const source = document.querySelector('[data-copy-source]');
-    if (!source) return;
     button.addEventListener('click', async () => {
-      source.select();
-      try {
-        await navigator.clipboard.writeText(source.value);
-        const original = button.textContent;
-        button.textContent = 'Copiado';
-        setTimeout(() => { button.textContent = original; }, 1500);
-      } catch {
-        // Left selected: Cmd-C still works.
-      }
+      const text = button.dataset.copy || source?.value;
+      if (!text) return;
+      // Selecting leaves Cmd-C as the way out if the copy itself fails.
+      source?.select();
+      if (await copyText(text)) markCopied(button);
     });
   });
+
+  async function copyText(text) {
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch {
+        // Denied or unavailable — fall through to the old way.
+      }
+    }
+    // The clipboard API needs a secure context, which plain HTTP on anything
+    // but localhost is not. This still works there.
+    const scratch = document.createElement('textarea');
+    scratch.value = text;
+    scratch.setAttribute('readonly', '');
+    scratch.style.position = 'fixed';
+    scratch.style.opacity = '0';
+    document.body.appendChild(scratch);
+    scratch.select();
+    let copied = false;
+    try {
+      copied = document.execCommand('copy');
+    } catch {
+      copied = false;
+    }
+    scratch.remove();
+    return copied;
+  }
+
+  // An icon button says it worked by swapping the icon; a text one by swapping
+  // its label. Writing over textContent would take the SVG with it.
+  function markCopied(button) {
+    const done = button.querySelector('[data-copy-done]');
+    if (done) {
+      const idle = button.querySelector('[data-copy-idle]');
+      done.hidden = false;
+      if (idle) idle.hidden = true;
+      setTimeout(() => {
+        done.hidden = true;
+        if (idle) idle.hidden = false;
+      }, 1500);
+      return;
+    }
+    const original = button.textContent;
+    button.textContent = 'Copiado';
+    setTimeout(() => { button.textContent = original; }, 1500);
+  }
 
   /* ---------- flash ---------- */
 
