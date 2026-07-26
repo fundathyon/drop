@@ -6,14 +6,27 @@ ADMIN_DIST := $(API_DIR)/internal/adminui/dist
 GOPATH_BIN := $(shell go env GOPATH)/bin
 
 .DEFAULT_GOAL := help
-.PHONY: help dev up down logs install seed api web admin build run swagger test lint clean
+CERTS_DIR := $(API_DIR)/certs
+
+.PHONY: help dev up down logs install seed keys api web admin build run swagger test lint clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
 
-dev: up ## Develop with hot reload: API (:8000) and the web dev server (:3000)
+dev: up keys ## Develop with hot reload: API (:8000) and the web dev server (:3000)
 	@$(MAKE) -j2 api web
+
+keys: $(CERTS_DIR)/private.pem ## Generate the RS256 keypair used to sign tokens
+
+$(CERTS_DIR)/private.pem:
+	@# Generated rather than committed: a signing key in version control is a
+	@# signing key everyone who ever cloned the repo has.
+	mkdir -p $(CERTS_DIR)
+	openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out $(CERTS_DIR)/private.pem
+	openssl rsa -in $(CERTS_DIR)/private.pem -pubout -out $(CERTS_DIR)/public.pem
+	chmod 600 $(CERTS_DIR)/private.pem
+	@echo "wrote $(CERTS_DIR)/{private,public}.pem"
 
 up: ## Start the MinIO stack in the background
 	docker compose up -d --wait --remove-orphans
@@ -53,7 +66,7 @@ build: admin ## Build the single binary: admin + API + drop server
 	cd $(API_DIR) && go build -o dropd ./cmd/dropd
 	@echo "built $(API_DIR)/dropd — start it with: make run"
 
-run: ## Run the built binary: admin, API and drops all on :8000
+run: keys ## Run the built binary: admin, API and drops all on :8000
 	cd $(API_DIR) && ./dropd
 
 swagger: ## Regenerate the OpenAPI spec from the handler annotations
