@@ -1,0 +1,28 @@
+name: drop
+
+services:
+  # Object storage for drop content. The API stores file bytes here; SQLite
+  # only holds the tree and metadata.
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000" # S3 API
+      - "9001:9001" # web console
+    environment:
+      MINIO_ROOT_USER: ${DROP_S3_ACCESS_KEY:-dropadmin}
+      MINIO_ROOT_PASSWORD: ${DROP_S3_SECRET_KEY:-dropadmin123}
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+    # The bucket is created by the API on startup (see internal/objects), so
+    # there is no init container here: a one-shot container that exits is
+    # neither running nor healthy, which makes `up --wait` report a failure.
+
+volumes:
+  minio-data:
