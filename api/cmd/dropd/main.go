@@ -43,7 +43,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	handler := httpapi.NewRouter(service.New(database, store), httpapi.Config{
+	handler := httpapi.NewRouter(service.New(database, store, cfg.PublicBaseURL), httpapi.Config{
 		AllowedOrigins: cfg.CORSOrigins,
 	})
 

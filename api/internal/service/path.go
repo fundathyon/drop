@@ -1,6 +1,7 @@
 package service
 
 import (
+	"mime"
 	"path"
 	"strings"
 )
@@ -70,6 +71,54 @@ func validFilePath(p string) (string, error) {
 		}
 	}
 	return cleaned, nil
+}
+
+// webContentTypes pins the types that matter for publishing a site. Relying on
+// the host's mime database alone is not portable: it varies between machines
+// and containers, and a stylesheet served as octet-stream is ignored by browsers.
+var webContentTypes = map[string]string{
+	".html":  "text/html; charset=utf-8",
+	".htm":   "text/html; charset=utf-8",
+	".css":   "text/css; charset=utf-8",
+	".js":    "text/javascript; charset=utf-8",
+	".mjs":   "text/javascript; charset=utf-8",
+	".json":  "application/json",
+	".xml":   "application/xml",
+	".svg":   "image/svg+xml",
+	".png":   "image/png",
+	".jpg":   "image/jpeg",
+	".jpeg":  "image/jpeg",
+	".gif":   "image/gif",
+	".webp":  "image/webp",
+	".avif":  "image/avif",
+	".ico":   "image/x-icon",
+	".txt":   "text/plain; charset=utf-8",
+	".md":    "text/markdown; charset=utf-8",
+	".yaml":  "application/yaml",
+	".yml":   "application/yaml",
+	".woff":  "font/woff",
+	".woff2": "font/woff2",
+	".ttf":   "font/ttf",
+	".otf":   "font/otf",
+	".pdf":   "application/pdf",
+	".wasm":  "application/wasm",
+}
+
+// resolveContentType decides how a file will be served. A client that does not
+// declare a type — curl, by default — would otherwise get everything stored as
+// octet-stream, which breaks stylesheets and scripts once published.
+func resolveContentType(name, declared string) string {
+	if declared != "" && declared != "application/octet-stream" {
+		return declared
+	}
+	ext := strings.ToLower(path.Ext(name))
+	if known, ok := webContentTypes[ext]; ok {
+		return known
+	}
+	if guessed := mime.TypeByExtension(ext); guessed != "" {
+		return guessed
+	}
+	return "application/octet-stream"
 }
 
 // slugifyName turns a human title into a usable folder name.

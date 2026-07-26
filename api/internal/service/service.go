@@ -43,12 +43,28 @@ type ObjectStore interface {
 }
 
 type Service struct {
-	db      *gorm.DB
-	objects ObjectStore
+	db            *gorm.DB
+	objects       ObjectStore
+	publicBaseURL string
 }
 
-func New(db *gorm.DB, store ObjectStore) *Service {
-	return &Service{db: db, objects: store}
+// New builds the service. publicBaseURL is the origin published drops are
+// reachable at; it is used to build the URL returned with every drop.
+func New(db *gorm.DB, store ObjectStore, publicBaseURL string) *Service {
+	return &Service{
+		db:            db,
+		objects:       store,
+		publicBaseURL: strings.TrimSuffix(publicBaseURL, "/"),
+	}
+}
+
+// PublicPathPrefix is where published drops are served from, keeping them out
+// of the way of /v1, /docs and /healthz.
+const PublicPathPrefix = "/d/"
+
+// publicURL is the address a drop can be opened at.
+func (s *Service) publicURL(slug string) string {
+	return s.publicBaseURL + PublicPathPrefix + slug
 }
 
 // ---------- API-facing representations ----------
@@ -84,6 +100,9 @@ type FileInfo struct {
 // DropDetail is a drop's identity, metadata, and file listing.
 type DropDetail struct {
 	Node
+	// URL is where the drop can be opened. Serving it is subject to
+	// visibility: a private drop answers 404 there.
+	URL   string     `json:"url" example:"http://localhost:8000/d/An1UHNyp"`
 	Meta  DropMeta   `json:"meta"`
 	Files []FileInfo `json:"files"`
 }
@@ -203,6 +222,7 @@ func (s *Service) detail(ctx context.Context, node *model.Node) (DropDetail, err
 
 	return DropDetail{
 		Node:  Node{Name: node.Name, Path: node.Path, Kind: node.Kind},
+		URL:   s.publicURL(node.Slug),
 		Meta:  metaOf(node),
 		Files: infos,
 	}, nil
@@ -619,6 +639,7 @@ func (s *Service) SaveFile(ctx context.Context, dropPath, filename string, r io.
 		return FileInfo{}, ErrNotDrop
 	}
 
+	contentType = resolveContentType(filename, contentType)
 	key := objectKey(node.Slug, filename)
 	if err := s.objects.Put(ctx, key, r, size, contentType); err != nil {
 		return FileInfo{}, err
@@ -683,6 +704,53 @@ func (s *Service) OpenFile(ctx context.Context, path string) (io.ReadCloser, Fil
 	if err != nil {
 		return nil, FileInfo{}, err
 	}
+	body, err := s.objects.Get(ctx, file.ObjectKey)
+	if err != nil {
+		return nil, FileInfo{}, err
+	}
+	return body, FileInfo{
+		Name:        file.Name,
+		Size:        file.Size,
+		ContentType: file.ContentType,
+		ModifiedAt:  file.UpdatedAt.UTC(),
+	}, nil
+}
+
+// OpenPublicFile serves a published drop by slug. An empty relPath resolves to
+// the drop's entrypoint. Private drops answer ErrNotFound rather than a 403, so
+// the response does not reveal that the slug exists.
+func (s *Service) OpenPublicFile(ctx context.Context, slug, relPath string) (io.ReadCloser, FileInfo, error) {
+	var node model.Node
+	err := s.db.WithContext(ctx).
+		Where("slug = ? AND kind = ?", slug, model.KindDrop).First(&node).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, FileInfo{}, ErrNotFound
+	}
+	if err != nil {
+		return nil, FileInfo{}, err
+	}
+	if node.Visibility == model.VisibilityPrivate {
+		return nil, FileInfo{}, ErrNotFound
+	}
+
+	if relPath == "" {
+		relPath = node.Entrypoint
+	}
+	clean, err := validFilePath(relPath)
+	if err != nil {
+		return nil, FileInfo{}, err
+	}
+
+	var file model.File
+	err = s.db.WithContext(ctx).
+		Where("node_id = ? AND name = ?", node.ID, clean).First(&file).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, FileInfo{}, ErrNotFound
+	}
+	if err != nil {
+		return nil, FileInfo{}, err
+	}
+
 	body, err := s.objects.Get(ctx, file.ObjectKey)
 	if err != nil {
 		return nil, FileInfo{}, err

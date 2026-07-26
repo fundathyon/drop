@@ -15,6 +15,49 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/d/{slug}/{filepath}": {
+            "get": {
+                "description": "Serves a drop's content by slug. Without a path the drop's entrypoint is returned; with one, that file. Private drops answer 404, so the response never reveals that the slug exists.",
+                "produces": [
+                    "text/html"
+                ],
+                "tags": [
+                    "public"
+                ],
+                "summary": "Open a published drop",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "An1UHNyp",
+                        "description": "Drop slug",
+                        "name": "slug",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "example": "assets/app.css",
+                        "description": "File inside the drop; defaults to the entrypoint",
+                        "name": "filepath",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/healthz": {
             "get": {
                 "description": "Returns ok when the API process is up.",
@@ -620,6 +663,11 @@ const docTemplate = `{
                 "path": {
                     "type": "string",
                     "example": "proyectos/arquitectura"
+                },
+                "url": {
+                    "description": "URL is where the drop can be opened. Serving it is subject to\nvisibility: a private drop answers 404 there.",
+                    "type": "string",
+                    "example": "http://localhost:8000/d/An1UHNyp"
                 }
             }
         },

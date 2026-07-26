@@ -38,6 +38,11 @@ func NewRouter(svc *service.Service, cfg Config) http.Handler {
 
 	r.GET("/healthz", h.health)
 
+	// Published drops. The /d/ prefix keeps slugs from colliding with the API,
+	// the docs and the health endpoint.
+	r.GET("/d/:slug", h.servePublicDrop)
+	r.GET("/d/:slug/*filepath", h.servePublicDrop)
+
 	v1 := r.Group("/v1")
 	{
 		v1.GET("/nodes", h.listNodes)

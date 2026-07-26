@@ -10,8 +10,12 @@ import (
 type Config struct {
 	HTTPAddr    string
 	DatabaseDSN string
-	CORSOrigins []string
-	S3          S3
+	// PublicBaseURL is the origin published drops are served from. It is what
+	// the API hands back as a drop's URL, so it must be reachable by whoever
+	// receives that link.
+	PublicBaseURL string
+	CORSOrigins   []string
+	S3            S3
 }
 
 // S3 points at a MinIO (or any S3-compatible) endpoint holding drop content.
@@ -27,9 +31,10 @@ type S3 struct {
 // docker-compose stack.
 func Load() Config {
 	return Config{
-		HTTPAddr:    env("DROP_HTTP_ADDR", ":8000"),
-		DatabaseDSN: env("DROP_DATABASE_DSN", "drop.db"),
-		CORSOrigins: splitList(env("DROP_CORS_ORIGINS", "http://localhost:3000")),
+		HTTPAddr:      env("DROP_HTTP_ADDR", ":8000"),
+		DatabaseDSN:   env("DROP_DATABASE_DSN", "drop.db"),
+		PublicBaseURL: strings.TrimSuffix(env("DROP_PUBLIC_BASE_URL", "http://localhost:8000"), "/"),
+		CORSOrigins:   splitList(env("DROP_CORS_ORIGINS", "http://localhost:3000")),
 		S3: S3{
 			Endpoint:  env("DROP_S3_ENDPOINT", "localhost:9000"),
 			AccessKey: env("DROP_S3_ACCESS_KEY", "dropadmin"),

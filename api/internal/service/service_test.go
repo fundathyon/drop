@@ -99,7 +99,7 @@ func newTestService(t *testing.T) (*Service, *fakeStore) {
 		t.Fatalf("open db: %v", err)
 	}
 	store := newFakeStore()
-	return New(database, store), store
+	return New(database, store, "http://localhost:8000"), store
 }
 
 func TestCreateFolderAndDrop(t *testing.T) {
@@ -376,6 +376,127 @@ func TestUploadDropAmbiguousEntrypoint(t *testing.T) {
 			t.Fatalf("expected ErrEntrypointMissing, got %v", err)
 		}
 	})
+}
+
+func TestOpenPublicFile(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTestService(t)
+
+	detail, err := svc.UploadDrop(ctx, UploadDropInput{
+		Title: "Publicado",
+		Files: []UploadFile{
+			uploadFile("pagina.html", "text/html", "<h1>hola</h1>"),
+			uploadFile("assets/app.css", "text/css", "body{}"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("UploadDrop: %v", err)
+	}
+	slug := detail.Meta.Slug
+
+	if detail.URL != "http://localhost:8000/d/"+slug {
+		t.Fatalf("unexpected public URL: %q", detail.URL)
+	}
+
+	// No path resolves to the entrypoint, whatever it is called.
+	body, info, err := svc.OpenPublicFile(ctx, slug, "")
+	if err != nil {
+		t.Fatalf("OpenPublicFile entrypoint: %v", err)
+	}
+	data, _ := io.ReadAll(body)
+	body.Close()
+	if string(data) != "<h1>hola</h1>" || info.Name != "pagina.html" {
+		t.Fatalf("unexpected entrypoint response: %q %+v", data, info)
+	}
+
+	// A nested asset is reachable by its relative path.
+	body, _, err = svc.OpenPublicFile(ctx, slug, "assets/app.css")
+	if err != nil {
+		t.Fatalf("OpenPublicFile asset: %v", err)
+	}
+	data, _ = io.ReadAll(body)
+	body.Close()
+	if string(data) != "body{}" {
+		t.Errorf("unexpected asset body: %q", data)
+	}
+
+	// Unknown slug and unknown file both 404.
+	if _, _, err := svc.OpenPublicFile(ctx, "nopeXXXX", ""); !errors.Is(err, ErrNotFound) {
+		t.Errorf("expected ErrNotFound for an unknown slug, got %v", err)
+	}
+	if _, _, err := svc.OpenPublicFile(ctx, slug, "no-existe.css"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("expected ErrNotFound for an unknown file, got %v", err)
+	}
+	// Traversal cannot escape the drop.
+	if _, _, err := svc.OpenPublicFile(ctx, slug, "../../etc/passwd"); !errors.Is(err, ErrInvalidPath) {
+		t.Errorf("expected ErrInvalidPath, got %v", err)
+	}
+}
+
+func TestContentTypeIsInferredWhenNotDeclared(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTestService(t)
+
+	detail, err := svc.UploadDrop(ctx, UploadDropInput{
+		Title: "Tipos",
+		Files: []UploadFile{
+			uploadFile("index.html", "", "<h1>x</h1>"),
+			// What curl sends when the caller does not pass `;type=`.
+			uploadFile("assets/app.css", "application/octet-stream", "body{}"),
+			uploadFile("logo.svg", "", "<svg/>"),
+			// An explicit type is respected as given.
+			uploadFile("raw.bin", "application/x-custom", "\x00"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("UploadDrop: %v", err)
+	}
+
+	got := map[string]string{}
+	for _, f := range detail.Files {
+		got[f.Name] = f.ContentType
+	}
+	want := map[string]string{
+		"index.html":     "text/html; charset=utf-8",
+		"assets/app.css": "text/css; charset=utf-8",
+		"logo.svg":       "image/svg+xml",
+		"raw.bin":        "application/x-custom",
+	}
+	for name, expected := range want {
+		if got[name] != expected {
+			t.Errorf("%s: expected %q, got %q", name, expected, got[name])
+		}
+	}
+}
+
+func TestOpenPublicFileHidesPrivateDrops(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTestService(t)
+
+	detail, err := svc.UploadDrop(ctx, UploadDropInput{
+		Title:      "Privado",
+		Visibility: model.VisibilityPrivate,
+		Files:      []UploadFile{uploadFile("index.html", "text/html", "secreto")},
+	})
+	if err != nil {
+		t.Fatalf("UploadDrop: %v", err)
+	}
+
+	// Not 403: a private drop must not confirm that its slug exists.
+	if _, _, err := svc.OpenPublicFile(ctx, detail.Meta.Slug, ""); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for a private drop, got %v", err)
+	}
+
+	// Publishing it makes it reachable without re-uploading anything.
+	visibility := model.VisibilityPublic
+	if _, err := svc.UpdateDropMeta(ctx, detail.Path, DropPatch{Visibility: &visibility}); err != nil {
+		t.Fatalf("UpdateDropMeta: %v", err)
+	}
+	body, _, err := svc.OpenPublicFile(ctx, detail.Meta.Slug, "")
+	if err != nil {
+		t.Fatalf("expected the drop to be served once public: %v", err)
+	}
+	body.Close()
 }
 
 func TestUploadDropValidation(t *testing.T) {

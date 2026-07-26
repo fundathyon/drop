@@ -39,6 +39,12 @@ definitions:
       path:
         example: proyectos/arquitectura
         type: string
+      url:
+        description: |-
+          URL is where the drop can be opened. Serving it is subject to
+          visibility: a private drop answers 404 there.
+        example: http://localhost:8000/d/An1UHNyp
+        type: string
     type: object
   drop_internal_service.DropMeta:
     properties:
@@ -192,6 +198,37 @@ info:
   title: Drop Admin API
   version: "1.0"
 paths:
+  /d/{slug}/{filepath}:
+    get:
+      description: Serves a drop's content by slug. Without a path the drop's entrypoint
+        is returned; with one, that file. Private drops answer 404, so the response
+        never reveals that the slug exists.
+      parameters:
+      - description: Drop slug
+        example: An1UHNyp
+        in: path
+        name: slug
+        required: true
+        type: string
+      - description: File inside the drop; defaults to the entrypoint
+        example: assets/app.css
+        in: path
+        name: filepath
+        type: string
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      summary: Open a published drop
+      tags:
+      - public
   /healthz:
     get:
       description: Returns ok when the API process is up.
