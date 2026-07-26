@@ -35,7 +35,7 @@ logs: ## Follow the MinIO logs
 seed: ## Fill the tree with demo content through the running API
 	@./scripts/seed.sh
 
-api: ## Run the server from source: admin, API and drops on :8000
+api: keys ## Run the server from source: admin, API and drops on :8000
 	cd $(API_DIR) && go run ./cmd/dropd
 
 build: ## Build the single binary: admin + API + drop server

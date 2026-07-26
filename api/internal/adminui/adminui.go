@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"drop/internal/auth"
 	"drop/internal/service"
 )
 
@@ -27,7 +28,7 @@ func Static() (fs.FS, error) { return fs.Sub(files, "static") }
 // pages are the template files that each supply a "content" and an "actions"
 // block. Every one is parsed together with the layout into its own set, because
 // a single set cannot hold two definitions of the same block name.
-var pages = []string{"explorer", "drop", "editor"}
+var pages = []string{"explorer", "drop", "editor", "login", "invite", "users"}
 
 // Renderer holds the parsed templates.
 type Renderer struct {
@@ -113,6 +114,46 @@ type Base struct {
 	Path   string
 	Crumbs []Crumb
 	Flash  *Flash
+	// User is who is signed in. Nil on the pages reached without a session —
+	// the login form and the invitation link — which is what tells the layout
+	// to leave out the navigation.
+	User *auth.UserInfo
+}
+
+// LoginPage is the sign-in form.
+type LoginPage struct {
+	Base
+	Email string
+	// Next is where to go once signed in, already checked to be a local path.
+	Next  string
+	Error string
+}
+
+// InvitePage is where an invited person sets their password.
+type InvitePage struct {
+	Base
+	Token string
+	Email string
+	Role  string
+	Name  string
+	// MinLength is surfaced so the form states the rule the server enforces.
+	MinLength int
+	// Acceptable is false for a link that is expired, revoked or already used,
+	// which is the difference between showing the form and showing why not.
+	Acceptable bool
+	Error      string
+}
+
+// UsersPage lists accounts and invitations.
+type UsersPage struct {
+	Base
+	Users       []auth.UserInfo
+	Invitations []auth.InvitationInfo
+	// Me is the signed-in administrator, so the page can refuse to offer them
+	// the actions the service would reject anyway.
+	Me auth.UserInfo
+	// NewLink is an invitation link to show once, right after creating it.
+	NewLink string
 }
 
 // ExplorerPage lists the folders and drops under a path.
@@ -225,7 +266,22 @@ func formatSize(bytes int64) string {
 
 // formatDate renders a timestamp for reading. The browser used to localise
 // this; rendering on the server means one fixed format, in the server's zone.
-func formatDate(t time.Time) string {
+//
+// It takes *time.Time as well, because "never signed in" is a nil pointer on
+// the users page and a template cannot dereference one safely.
+func formatDate(value any) string {
+	var t time.Time
+	switch v := value.(type) {
+	case time.Time:
+		t = v
+	case *time.Time:
+		if v == nil {
+			return "—"
+		}
+		t = *v
+	default:
+		return "—"
+	}
 	if t.IsZero() {
 		return "—"
 	}

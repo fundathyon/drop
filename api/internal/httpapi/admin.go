@@ -46,7 +46,7 @@ func (a *adminHandler) index(c *gin.Context) {
 	nodes, err := a.svc.List(c.Request.Context(), path)
 	if err == nil {
 		a.render(c, http.StatusOK, "explorer", adminui.ExplorerPage{
-			Base:  a.base(pageTitle(path), path, flash),
+			Base:  a.base(c, pageTitle(path), path, flash),
 			Nodes: nodes,
 			Mode:  viewMode(c),
 		})
@@ -63,7 +63,7 @@ func (a *adminHandler) index(c *gin.Context) {
 		return
 	}
 	a.render(c, http.StatusOK, "drop", adminui.DropPage{
-		Base:   a.base(detail.Meta.Title, path, flash),
+		Base:   a.base(c, detail.Meta.Title, path, flash),
 		Detail: detail,
 	})
 }
@@ -89,7 +89,7 @@ func (a *adminHandler) edit(c *gin.Context) {
 
 	fileType := adminui.TypeOf(name)
 	page := adminui.EditorPage{
-		Base:     a.base(name, full, takeFlash(c)),
+		Base:     a.base(c, name, full, takeFlash(c)),
 		DropPath: dropPath,
 		Name:     name,
 		File:     info,
@@ -275,24 +275,24 @@ func (a *adminHandler) deleteFile(c *gin.Context) {
 
 // ---------- plumbing ----------
 
-func (a *adminHandler) base(title, path string, flash *adminui.Flash) adminui.Base {
-	return adminui.Base{
+// base fills the shell. The signed-in account comes from the context the
+// session middleware put it in; the layout keys the whole navigation off it, so
+// forgetting it here would render the admin as if nobody were signed in.
+func (a *adminHandler) base(c *gin.Context, title, path string, flash *adminui.Flash) adminui.Base {
+	b := adminui.Base{
 		Title:  title + " · Drop",
 		Path:   path,
 		Crumbs: adminui.Breadcrumbs(path),
 		Flash:  flash,
 	}
+	if user, ok := currentUser(c); ok {
+		b.User = &user
+	}
+	return b
 }
 
 func (a *adminHandler) render(c *gin.Context, status int, page string, data any) {
-	c.Header("Cache-Control", "no-store")
-	c.Status(status)
-	c.Header("Content-Type", "text/html; charset=utf-8")
-	if err := a.ui.Render(c.Writer, page, data); err != nil {
-		// The status line is already out, so there is nothing to signal with;
-		// log it rather than corrupt the response further.
-		slog.Error("render admin page", "page", page, "error", err)
-	}
+	renderPage(c, a.ui, status, page, data)
 }
 
 // done redirects back to a location after a successful mutation, so a reload

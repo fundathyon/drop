@@ -79,6 +79,27 @@
     });
   }
 
+  /* ---------- copy to clipboard ---------- */
+
+  // The invitation link is shown once and never again, so copying it has to be
+  // one click. The field stays selectable for the case where the clipboard API
+  // is unavailable (it needs a secure context).
+  document.querySelectorAll('[data-copy]').forEach((button) => {
+    const source = document.querySelector('[data-copy-source]');
+    if (!source) return;
+    button.addEventListener('click', async () => {
+      source.select();
+      try {
+        await navigator.clipboard.writeText(source.value);
+        const original = button.textContent;
+        button.textContent = 'Copiado';
+        setTimeout(() => { button.textContent = original; }, 1500);
+      } catch {
+        // Left selected: Cmd-C still works.
+      }
+    });
+  });
+
   /* ---------- flash ---------- */
 
   const flash = document.querySelector('.flash');

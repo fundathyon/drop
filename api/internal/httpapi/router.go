@@ -3,6 +3,7 @@
 package httpapi
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -18,6 +19,8 @@ import (
 
 	_ "drop/docs" // generated OpenAPI spec, registered on import
 	"drop/internal/adminui"
+	"drop/internal/auth"
+	"drop/internal/model"
 	"drop/internal/service"
 )
 
@@ -32,11 +35,29 @@ type Config struct {
 	AllowedOrigins []string
 	// InjectWidget appends the Drop badge to published HTML pages.
 	InjectWidget bool
+	// Auth is the account service. It is required: without it there would be
+	// nothing standing between the internet and the admin.
+	Auth *auth.Service
+	// CookieSecure marks the session cookie Secure. Off for plain-HTTP
+	// localhost, and on everywhere else.
+	CookieSecure bool
 }
+
+// loginAttempts is how many credential checks one address gets per window.
+// Generous enough that a person who mistypes a few times never notices, small
+// enough that guessing a password online is not a strategy.
+const (
+	loginAttempts = 10
+	loginWindow   = time.Minute
+)
 
 // NewRouter builds the HTTP handler: the admin, the JSON API and the Swagger UI.
 func NewRouter(svc *service.Service, cfg Config) (http.Handler, error) {
 	gin.SetMode(gin.ReleaseMode)
+
+	if cfg.Auth == nil {
+		return nil, errors.New("auth service is required")
+	}
 
 	ui, err := adminui.New()
 	if err != nil {
@@ -47,8 +68,15 @@ func NewRouter(svc *service.Service, cfg Config) (http.Handler, error) {
 		return nil, fmt.Errorf("admin assets: %w", err)
 	}
 
+	limiter := newAttemptLimiter(loginAttempts, loginWindow)
+
 	h := &handler{svc: svc, injectWidget: cfg.InjectWidget}
 	a := &adminHandler{svc: svc, ui: ui}
+	auths := &authHandler{svc: cfg.Auth, ui: ui, cookieSecure: cfg.CookieSecure, logins: limiter}
+	apiAuth := &apiAuthHandler{svc: cfg.Auth, logins: limiter}
+
+	session := requireSession(cfg.Auth)
+	apiGuard := requireAPIAuth(cfg.Auth)
 
 	r := gin.New()
 	r.MaxMultipartMemory = maxUploadMemory
@@ -61,7 +89,17 @@ func NewRouter(svc *service.Service, cfg Config) (http.Handler, error) {
 	r.GET("/d/:slug", h.servePublicDrop)
 	r.GET("/d/:slug/*filepath", h.servePublicDrop)
 
-	v1 := r.Group("/v1")
+	// Getting a token is the one API call that cannot require one. Both are
+	// throttled: they are the two places a password or a token is checked.
+	authAPI := r.Group("/v1/auth")
+	{
+		authAPI.POST("/login", limitAttempts(limiter, tooManyAttemptsJSON), apiAuth.login)
+		authAPI.POST("/refresh", limitAttempts(limiter, tooManyAttemptsJSON), apiAuth.refresh)
+		authAPI.POST("/logout", apiAuth.logout)
+		authAPI.GET("/me", apiGuard, apiAuth.me)
+	}
+
+	v1 := r.Group("/v1", apiGuard)
 	{
 		v1.GET("/nodes", h.listNodes)
 		v1.POST("/nodes", h.createFolder)
@@ -77,20 +115,42 @@ func NewRouter(svc *service.Service, cfg Config) (http.Handler, error) {
 		v1.GET("/files", h.downloadFile)
 		v1.POST("/files", h.uploadFiles)
 		v1.DELETE("/files", h.deleteFile)
+
+		// Account management is administrators only.
+		accounts := v1.Group("", requireAdminAPI)
+		accounts.GET("/users", apiAuth.listUsers)
+		accounts.PATCH("/users/:id/active", apiAuth.setUserActive)
+		accounts.DELETE("/users/:id", apiAuth.deleteUser)
+		accounts.GET("/invitations", apiAuth.listInvitations)
+		accounts.POST("/invitations", apiAuth.createInvitation)
+		accounts.DELETE("/invitations/:id", apiAuth.revokeInvitation)
 	}
 
-	// Swagger UI. /docs redirects to the index so the bare path works.
-	r.GET("/docs", func(c *gin.Context) {
+	// Swagger UI. /docs redirects to the index so the bare path works. It is
+	// behind the session too: the spec describes every endpoint and their
+	// shapes, which is a map worth not handing out.
+	r.GET("/docs", session, func(c *gin.Context) {
 		c.Redirect(http.StatusMovedPermanently, "/docs/index.html")
 	})
-	r.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	r.GET("/docs/*any", session, ginSwagger.WrapHandler(swaggerFiles.Handler))
+
+	// Signing in, and the invitation link, are the only admin pages reachable
+	// without a session — everything else redirects here.
+	r.GET("/login", auths.loginPage)
+	r.POST("/login", limitAttempts(limiter, auths.tooManyLogins), auths.login)
+	r.POST("/logout", auths.logout)
+	r.GET("/invitacion", auths.invitePage)
+	r.POST("/invitacion", auths.acceptInvite)
+
+	// The stylesheet and script are needed to render the login form itself, so
+	// they sit outside the session.
+	r.GET("/admin/static/*filepath", serveStatic(static))
 
 	// The admin. It is server-rendered, so every route it needs is registered
 	// here; anything else is a real 404 rather than a page.
-	r.GET("/", a.index)
-	r.GET("/admin/edit", a.edit)
-	r.GET("/admin/static/*filepath", serveStatic(static))
-	admin := r.Group("/admin")
+	r.GET("/", session, a.index)
+	r.GET("/admin/edit", session, a.edit)
+	admin := r.Group("/admin", session)
 	{
 		admin.POST("/folders", a.createFolder)
 		admin.POST("/drops", a.createDrop)
@@ -100,11 +160,39 @@ func NewRouter(svc *service.Service, cfg Config) (http.Handler, error) {
 		admin.POST("/files", a.uploadFiles)
 		admin.POST("/files/save", a.saveFile)
 		admin.POST("/files/delete", a.deleteFile)
+
+		// Accounts and invitations, administrators only.
+		accounts := admin.Group("/usuarios", requireAdminPage)
+		accounts.GET("", auths.usersPage)
+		accounts.POST("/activar", auths.setUserActive)
+		accounts.POST("/eliminar", auths.deleteUser)
+		accounts.POST("/invitaciones", auths.createInvitation)
+		accounts.POST("/invitaciones/revocar", auths.revokeInvitation)
 	}
 
 	r.NoRoute(notFound)
 
 	return r, nil
+}
+
+// tooManyAttemptsJSON is the rate-limit answer for API clients; the admin form
+// redraws itself with the message instead.
+func tooManyAttemptsJSON(c *gin.Context) {
+	abortWithError(c, http.StatusTooManyRequests, "too_many_attempts",
+		"too many attempts; wait a minute and try again")
+}
+
+// requireAdminPage keeps a signed-in non-administrator out of the account
+// screens, sending them back to the explorer with the reason.
+func requireAdminPage(c *gin.Context) {
+	user, ok := currentUser(c)
+	if !ok || user.Role != model.RoleAdmin {
+		setFlash(c, "error", "Solo un administrador puede gestionar cuentas")
+		c.Redirect(http.StatusSeeOther, "/")
+		c.Abort()
+		return
+	}
+	c.Next()
 }
 
 // serveStatic serves the admin's stylesheet and script. Their URLs carry a

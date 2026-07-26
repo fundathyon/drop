@@ -752,6 +752,115 @@ dialog::backdrop {
   max-height: 60vh;
 }
 
+/* ---------- signed-out pages ---------- */
+
+.centered {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: 1.5rem;
+}
+
+.auth-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: min(24rem, 100%);
+  padding: 2rem;
+  border-width: 1px;
+  border-radius: calc(var(--radius) * 1.4);
+  background: var(--card);
+}
+
+.auth-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.auth-head h1 {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.auth-mark {
+  width: 2rem;
+  height: 2rem;
+  margin-bottom: 0.25rem;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.auth-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  border-width: 1px;
+  border-color: color-mix(in oklab, var(--destructive) 50%, transparent);
+  border-radius: calc(var(--radius) * 0.8);
+  color: var(--destructive);
+}
+
+.auth-error svg {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+}
+
+.auth-foot,
+.hint {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+/* ---------- account and invitations ---------- */
+
+.account-name {
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#account-menu .dialog-body a,
+#account-menu .dialog-body button {
+  justify-content: flex-start;
+}
+
+.invite-link {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  border-width: 1px;
+  border-radius: calc(var(--radius) * 1.4);
+  background: var(--muted);
+}
+
+.invite-link .section-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.invite-link .section-subtitle svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.invite-link input {
+  flex: 1;
+  min-width: 12rem;
+  font-size: 0.75rem;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0.01ms !important;

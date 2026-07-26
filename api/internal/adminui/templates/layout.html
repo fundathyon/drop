@@ -18,40 +18,73 @@
     </script>
   </head>
   <body>
-    <header class="header">
-      <div class="header-inner">
-        <a class="brand" href="/">
-          {{icon "package" ""}}Drop <span class="muted">admin</span>
-        </a>
+    {{if .User}}
+      <header class="header">
+        <div class="header-inner">
+          <a class="brand" href="/">
+            {{icon "package" ""}}Drop <span class="muted">admin</span>
+          </a>
 
-        <nav class="breadcrumb spacer" aria-label="Ruta">
-          {{if .Crumbs}}
-            <a href="/">{{icon "house" ""}}</a>
-            {{range $c := .Crumbs}}
-              {{icon "chevron-right" ""}}
-              {{if eq $c.Path $.Path}}
-                <span class="current" aria-current="page">{{$c.Name}}</span>
+          {{block "nav" .}}
+            <nav class="breadcrumb spacer" aria-label="Ruta">
+              {{if .Crumbs}}
+                <a href="/">{{icon "house" ""}}</a>
+                {{range $c := .Crumbs}}
+                  {{icon "chevron-right" ""}}
+                  {{if eq $c.Path $.Path}}
+                    <span class="current" aria-current="page">{{$c.Name}}</span>
+                  {{else}}
+                    <a href="/?path={{$c.Path}}">{{$c.Name}}</a>
+                  {{end}}
+                {{end}}
               {{else}}
-                <a href="/?path={{$c.Path}}">{{$c.Name}}</a>
+                <span class="current" aria-current="page">{{icon "house" ""}} Inicio</span>
               {{end}}
-            {{end}}
-          {{else}}
-            <span class="current" aria-current="page">{{icon "house" ""}} Inicio</span>
+            </nav>
           {{end}}
-        </nav>
 
-        <div class="actions">
-          {{block "actions" .}}{{end}}
-          <button type="button" class="btn btn-outline btn-icon" data-theme-toggle
-                  aria-label="Cambiar tema">
-            <span data-theme-icon="light" hidden>{{icon "sun" ""}}</span>
-            <span data-theme-icon="dark" hidden>{{icon "moon" ""}}</span>
-          </button>
+          <div class="actions">
+            {{block "actions" .}}{{end}}
+            <button type="button" class="btn btn-outline btn-icon" data-theme-toggle
+                    aria-label="Cambiar tema">
+              <span data-theme-icon="light" hidden>{{icon "sun" ""}}</span>
+              <span data-theme-icon="dark" hidden>{{icon "moon" ""}}</span>
+            </button>
+
+            <div class="account">
+              <button type="button" class="btn btn-outline btn-sm" data-open="account-menu"
+                      aria-label="Cuenta de {{.User.Email}}">
+                {{icon "user" ""}}<span class="account-name">{{.User.Name}}</span>
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-    </header>
+      </header>
 
-    <main class="main">{{block "content" .}}{{end}}</main>
+      <main class="main">{{block "content" .}}{{end}}</main>
+
+      <dialog id="account-menu">
+        <h2 class="dialog-title">{{.User.Name}}</h2>
+        <p class="dialog-description">{{.User.Email}} · {{.User.Role}}</p>
+        <div class="dialog-body">
+          {{if eq .User.Role "admin"}}
+            <a class="btn btn-outline" href="/admin/usuarios">
+              {{icon "users" ""}}Usuarios e invitaciones
+            </a>
+          {{end}}
+          <form method="post" action="/logout">
+            <button type="submit" class="btn btn-outline" style="width: 100%">
+              {{icon "log-out" ""}}Cerrar sesión
+            </button>
+          </form>
+        </div>
+        <div class="dialog-footer">
+          <button type="button" class="btn btn-outline" data-close>Cerrar</button>
+        </div>
+      </dialog>
+    {{else}}
+      <main class="centered">{{block "content" .}}{{end}}</main>
+    {{end}}
 
     {{with .Flash}}
       <div class="flash flash-{{.Kind}}" role="status">
