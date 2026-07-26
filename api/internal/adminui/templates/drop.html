@@ -32,15 +32,41 @@
       <h2 class="section-title">Archivos</h2>
       <span class="badge badge-secondary">v{{.Detail.Meta.Version}}</span>
       <span class="badge badge-secondary">{{.Detail.Meta.Visibility}}</span>
-      {{/* A private drop answers 404 at its URL, so don't offer the link. Nor
-           does one whose entrypoint names a file it does not have. */}}
-      {{if and (ne .Detail.Meta.Visibility "private") (not .Detail.EntrypointMissing)}}
-        <a class="link" href="{{.Detail.URL}}" target="_blank" rel="noopener"
-           title="Abrir el drop publicado">
-          {{icon "external-link" ""}}{{.Detail.URL}}
-        </a>
+      {{/* A drop whose entrypoint names nothing it has answers 404 too, and
+           that one has its own notice below. */}}
+      {{if not .Detail.EntrypointMissing}}
+        {{if eq .Detail.Meta.Visibility "private"}}
+          {{/* The address is real and worth being able to copy; it just does
+               not answer yet. Shown as text so nobody clicks into a 404. */}}
+          <span class="link link-muted" title="No responde mientras el drop sea privado">
+            {{icon "lock" ""}}{{.Detail.URL}}
+          </span>
+        {{else}}
+          <a class="link" href="{{.Detail.URL}}" target="_blank" rel="noopener"
+             title="Abrir el drop publicado">
+            {{icon "external-link" ""}}{{.Detail.URL}}
+          </a>
+        {{end}}
       {{end}}
     </div>
+
+    {{if and (eq .Detail.Meta.Visibility "private") (not .Detail.EntrypointMissing)}}
+      <p class="notice notice-info" role="status">
+        {{icon "lock" ""}}
+        <span>
+          Este drop es <strong>privado</strong>: su URL responde 404 a todo el
+          mundo, tú incluido.
+          {{if .Detail.Access.CanWrite}}
+            Para que se pueda abrir, cámbialo a <code>unlisted</code> (accesible
+            con el enlace, sin listar) o <code>public</code> desde
+            <strong>Metadata</strong>.
+          {{else}}
+            Solo quien pueda editarlo puede cambiar eso.
+          {{end}}
+          Compartirlo desde aquí da acceso al panel, no a la URL pública.
+        </span>
+      </p>
+    {{end}}
 
     {{if ne .Detail.Access "owner"}}
       <p class="notice notice-info" role="status">

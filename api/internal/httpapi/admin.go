@@ -361,12 +361,14 @@ func (a *adminHandler) base(c *gin.Context, title string, ref service.Ref, flash
 		Owner:  ref.Owner,
 		Crumbs: adminui.Breadcrumbs(ref),
 		Flash:  flash,
-		// Browsing another drive is still the shared section, however deep in
-		// you are — the tab should not claim you are in your own.
-		Shared: ref.Owner != 0,
 	}
 	if user, ok := currentUser(c); ok {
 		b.User = &user
+		// Browsing another drive is still the shared section, however deep in
+		// you are. Comparing against zero is not enough: links built from a
+		// node's real owner carry it even inside your own tree, and that would
+		// file your own drops under somebody else's.
+		b.Shared = ref.Owner != 0 && ref.Owner != user.ID
 	}
 	return b
 }

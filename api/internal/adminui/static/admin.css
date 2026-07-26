@@ -562,6 +562,15 @@ td.right {
   text-decoration: underline;
 }
 
+.link-muted {
+  color: var(--muted-foreground);
+  cursor: default;
+}
+
+.link-muted:hover {
+  text-decoration: none;
+}
+
 .link svg {
   width: 0.75rem;
   height: 0.75rem;
@@ -980,4 +989,18 @@ dialog::backdrop {
   gap: 0.75rem;
   padding-top: 0.75rem;
   border-top-width: 1px;
+}
+
+/* The header carries a lot: brand, drives, breadcrumb, actions and account.
+   Below this width the drive labels are the first thing worth dropping — the
+   icons still say which section you are in, and the breadcrumb keeps its room
+   instead of wrapping onto a second line. */
+@media (max-width: 1100px) {
+  .drives a span {
+    display: none;
+  }
+}
+
+.drives {
+  flex-shrink: 0;
 }
