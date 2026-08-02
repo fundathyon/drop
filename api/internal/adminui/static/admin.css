@@ -882,6 +882,86 @@ dialog::backdrop {
   color: var(--muted-foreground);
 }
 
+/* ---------- auth split screen (login, setup) ---------- */
+
+/* position: fixed escapes .centered's flex-centred, padded box: the split
+   panels need to cover the viewport edge to edge, which a flex child cannot
+   do without fighting its parent's padding and centering. */
+.auth-shell {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  min-height: 100dvh;
+}
+
+.auth-brand {
+  display: none;
+  flex: 1 1 50%;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1.75rem 2rem;
+  background: var(--muted);
+}
+
+@media (min-width: 60rem) {
+  .auth-brand {
+    display: flex;
+  }
+}
+
+.auth-tagline {
+  max-width: 24rem;
+  color: var(--muted-foreground);
+}
+
+.auth-panel {
+  flex: 1 1 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 1.5rem;
+  background: var(--background);
+}
+
+.auth-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: min(24rem, 100%);
+}
+
+.password-field {
+  position: relative;
+}
+
+.password-field input {
+  padding-right: 2.5rem;
+}
+
+.password-toggle {
+  position: absolute;
+  inset-block: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.password-toggle:hover {
+  color: var(--foreground);
+}
+
+.password-toggle svg {
+  width: 1rem;
+  height: 1rem;
+}
+
 /* ---------- account and invitations ---------- */
 
 .account-name {

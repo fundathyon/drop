@@ -1,32 +1,41 @@
 {{define "content"}}
-  <div class="auth-card">
-    <div class="auth-head">
-      {{icon "package" "auth-mark"}}
-      <h1>Drop <span class="muted">admin</span></h1>
-      <p class="dialog-description">Entra para gestionar carpetas, drops y usuarios.</p>
+  <div class="auth-shell">
+    <aside class="auth-brand">
+      <span class="brand">{{icon "package" ""}}Drop <span class="muted">admin</span></span>
+      <p class="auth-tagline">Un Drive para publicar carpetas como sitios web estáticos.</p>
+    </aside>
+
+    <div class="auth-panel">
+      <div class="auth-content">
+        <div class="auth-head">
+          {{icon "package" "auth-mark"}}
+          <h1>Drop <span class="muted">admin</span></h1>
+          <p class="dialog-description">Entra para gestionar carpetas, drops y usuarios.</p>
+        </div>
+
+        {{with .Error}}
+          <p class="auth-error" role="alert">{{icon "triangle-alert" ""}}<span>{{.}}</span></p>
+        {{end}}
+
+        <form method="post" action="/login" class="auth-form">
+          <input type="hidden" name="next" value="{{.Next}}" />
+          <div class="field">
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" autocomplete="username"
+                   value="{{.Email}}" required autofocus />
+          </div>
+          <div class="field">
+            <label for="password">Contraseña</label>
+            <input id="password" name="password" type="password"
+                   autocomplete="current-password" required />
+          </div>
+          <button type="submit" class="btn" style="width: 100%">Entrar</button>
+        </form>
+
+        <p class="auth-foot">
+          No hay registro abierto: las cuentas se crean por invitación.
+        </p>
+      </div>
     </div>
-
-    {{with .Error}}
-      <p class="auth-error" role="alert">{{icon "triangle-alert" ""}}<span>{{.}}</span></p>
-    {{end}}
-
-    <form method="post" action="/login" class="auth-form">
-      <input type="hidden" name="next" value="{{.Next}}" />
-      <div class="field">
-        <label for="email">Email</label>
-        <input id="email" name="email" type="email" autocomplete="username"
-               value="{{.Email}}" required autofocus />
-      </div>
-      <div class="field">
-        <label for="password">Contraseña</label>
-        <input id="password" name="password" type="password"
-               autocomplete="current-password" required />
-      </div>
-      <button type="submit" class="btn" style="width: 100%">Entrar</button>
-    </form>
-
-    <p class="auth-foot">
-      No hay registro abierto: las cuentas se crean por invitación.
-    </p>
   </div>
 {{end}}

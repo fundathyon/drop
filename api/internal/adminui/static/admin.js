@@ -24,6 +24,21 @@
   }
   syncThemeIcon();
 
+  /* ---------- password visibility ---------- */
+
+  document.querySelectorAll('[data-toggle-password]').forEach((button) => {
+    const input = document.getElementById(button.dataset.togglePassword);
+    if (!input) return;
+    button.addEventListener('click', () => {
+      const showing = input.type === 'text';
+      input.type = showing ? 'password' : 'text';
+      button.setAttribute('aria-label', showing ? 'Mostrar contraseña' : 'Ocultar contraseña');
+      button.querySelectorAll('[data-password-icon]').forEach((el) => {
+        el.hidden = el.dataset.passwordIcon !== (showing ? 'show' : 'hide');
+      });
+    });
+  });
+
   /* ---------- dialogs ---------- */
 
   document.querySelectorAll('[data-open]').forEach((button) => {
