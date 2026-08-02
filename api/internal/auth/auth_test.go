@@ -200,6 +200,56 @@ func TestLoadKeysRejectsAMismatchedPair(t *testing.T) {
 	}
 }
 
+func TestKeysFromPEMLoadsAMatchingPair(t *testing.T) {
+	key, _ := rsa.GenerateKey(rand.Reader, 2048)
+	privDER, _ := x509.MarshalPKCS8PrivateKey(key)
+	pubDER, _ := x509.MarshalPKIXPublicKey(&key.PublicKey)
+	privatePEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privDER})
+	publicPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER})
+
+	keys, err := KeysFromPEM(privatePEM, publicPEM)
+	if err != nil {
+		t.Fatalf("KeysFromPEM: %v", err)
+	}
+	if !keys.Private.PublicKey.Equal(keys.Public) {
+		t.Fatal("loaded keypair does not match itself")
+	}
+}
+
+// TestKeysFromPEMUnescapesLiteralNewlines covers the shape a keypair usually
+// arrives in from a platform whose environment variables are single-line
+// text fields: line breaks pasted or generated as the two characters `\`,
+// `n` rather than an actual newline byte.
+func TestKeysFromPEMUnescapesLiteralNewlines(t *testing.T) {
+	key, _ := rsa.GenerateKey(rand.Reader, 2048)
+	privDER, _ := x509.MarshalPKCS8PrivateKey(key)
+	pubDER, _ := x509.MarshalPKIXPublicKey(&key.PublicKey)
+	privatePEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privDER})
+	publicPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER})
+
+	escape := func(b []byte) []byte {
+		return []byte(strings.ReplaceAll(string(b), "\n", `\n`))
+	}
+
+	if _, err := KeysFromPEM(escape(privatePEM), escape(publicPEM)); err != nil {
+		t.Fatalf("KeysFromPEM with escaped newlines: %v", err)
+	}
+}
+
+func TestKeysFromPEMRejectsAMismatchedPair(t *testing.T) {
+	a, _ := rsa.GenerateKey(rand.Reader, 2048)
+	b, _ := rsa.GenerateKey(rand.Reader, 2048)
+
+	privDER, _ := x509.MarshalPKCS8PrivateKey(a)
+	pubDER, _ := x509.MarshalPKIXPublicKey(&b.PublicKey)
+	privatePEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privDER})
+	publicPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER})
+
+	if _, err := KeysFromPEM(privatePEM, publicPEM); err == nil {
+		t.Fatal("expected a mismatched keypair to be refused")
+	}
+}
+
 // ---------- bootstrap and login ----------
 
 func TestBootstrapIsIdempotentAndNeverOverwrites(t *testing.T) {

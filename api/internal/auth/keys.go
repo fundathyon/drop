@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // minKeySize rejects a keypair too small to be worth signing with. 2048 bits is
@@ -25,11 +26,41 @@ type Keys struct {
 
 // LoadKeys reads a PEM keypair from disk.
 func LoadKeys(privatePath, publicPath string) (*Keys, error) {
-	private, err := loadPrivateKey(privatePath)
+	privatePEM, err := readPEMFile(privatePath)
 	if err != nil {
 		return nil, err
 	}
-	public, err := loadPublicKey(publicPath)
+	publicPEM, err := readPEMFile(publicPath)
+	if err != nil {
+		return nil, err
+	}
+	return newKeys(privatePEM, publicPEM, privatePath, publicPath)
+}
+
+// KeysFromPEM builds a keypair from PEM-encoded key material already in
+// memory, for deployments that inject the keypair through environment
+// variables (PRIVATE_KEY_JWT/PUBLIC_KEY_JWT) rather than mounting files —
+// some hosting platforms only offer the former. A literal `\n` is unescaped
+// first, since a value pasted into a single-line env var field commonly
+// carries its line breaks that way rather than as real newlines.
+func KeysFromPEM(privatePEM, publicPEM []byte) (*Keys, error) {
+	return newKeys(unescapeNewlines(privatePEM), unescapeNewlines(publicPEM),
+		"PRIVATE_KEY_JWT", "PUBLIC_KEY_JWT")
+}
+
+func unescapeNewlines(raw []byte) []byte {
+	return []byte(strings.ReplaceAll(string(raw), `\n`, "\n"))
+}
+
+// newKeys parses and validates a keypair already in memory. privateSource and
+// publicSource name where each half came from, purely for error messages —
+// a file path for LoadKeys, an environment variable name for KeysFromPEM.
+func newKeys(privatePEM, publicPEM []byte, privateSource, publicSource string) (*Keys, error) {
+	private, err := parsePrivateKey(privatePEM, privateSource)
+	if err != nil {
+		return nil, err
+	}
+	public, err := parsePublicKey(publicPEM, publicSource)
 	if err != nil {
 		return nil, err
 	}
@@ -40,14 +71,14 @@ func LoadKeys(privatePath, publicPath string) (*Keys, error) {
 	// A mismatched pair fails at the worst possible moment: tokens are issued
 	// happily and rejected by every verifier. Catch it at startup instead.
 	if !private.PublicKey.Equal(public) {
-		return nil, fmt.Errorf("%s and %s are not a keypair", privatePath, publicPath)
+		return nil, fmt.Errorf("%s and %s are not a keypair", privateSource, publicSource)
 	}
 
 	return &Keys{Private: private, Public: public}, nil
 }
 
-func loadPrivateKey(path string) (*rsa.PrivateKey, error) {
-	block, err := readPEM(path)
+func parsePrivateKey(raw []byte, source string) (*rsa.PrivateKey, error) {
+	block, err := decodePEM(raw, source)
 	if err != nil {
 		return nil, err
 	}
@@ -57,19 +88,19 @@ func loadPrivateKey(path string) (*rsa.PrivateKey, error) {
 	if key, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
 		rsaKey, ok := key.(*rsa.PrivateKey)
 		if !ok {
-			return nil, fmt.Errorf("%s holds a %T, not an RSA private key", path, key)
+			return nil, fmt.Errorf("%s holds a %T, not an RSA private key", source, key)
 		}
 		return rsaKey, nil
 	}
 	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf("parse private key %s: %w", path, err)
+		return nil, fmt.Errorf("parse private key %s: %w", source, err)
 	}
 	return key, nil
 }
 
-func loadPublicKey(path string) (*rsa.PublicKey, error) {
-	block, err := readPEM(path)
+func parsePublicKey(raw []byte, source string) (*rsa.PublicKey, error) {
+	block, err := decodePEM(raw, source)
 	if err != nil {
 		return nil, err
 	}
@@ -77,18 +108,18 @@ func loadPublicKey(path string) (*rsa.PublicKey, error) {
 	if key, err := x509.ParsePKIXPublicKey(block.Bytes); err == nil {
 		rsaKey, ok := key.(*rsa.PublicKey)
 		if !ok {
-			return nil, fmt.Errorf("%s holds a %T, not an RSA public key", path, key)
+			return nil, fmt.Errorf("%s holds a %T, not an RSA public key", source, key)
 		}
 		return rsaKey, nil
 	}
 	key, err := x509.ParsePKCS1PublicKey(block.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf("parse public key %s: %w", path, err)
+		return nil, fmt.Errorf("parse public key %s: %w", source, err)
 	}
 	return key, nil
 }
 
-func readPEM(path string) (*pem.Block, error) {
+func readPEMFile(path string) ([]byte, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -96,9 +127,13 @@ func readPEM(path string) (*pem.Block, error) {
 		}
 		return nil, err
 	}
+	return raw, nil
+}
+
+func decodePEM(raw []byte, source string) (*pem.Block, error) {
 	block, _ := pem.Decode(raw)
 	if block == nil {
-		return nil, fmt.Errorf("%s is not PEM-encoded", path)
+		return nil, fmt.Errorf("%s is not PEM-encoded", source)
 	}
 	return block, nil
 }

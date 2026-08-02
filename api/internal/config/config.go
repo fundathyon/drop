@@ -31,7 +31,13 @@ type Auth struct {
 	// everything that verifies a token, and each of those could then mint one.
 	PrivateKeyPath string
 	PublicKeyPath  string
-	Issuer         string
+	// PrivateKeyPEM and PublicKeyPEM carry the same keypair as PEM text
+	// instead of a path, for platforms that only offer environment variables
+	// and no writable filesystem to point JWT_PRIVATE_KEY_PATH at. Set
+	// together, they take priority over the *Path fields.
+	PrivateKeyPEM string
+	PublicKeyPEM  string
+	Issuer        string
 	// AccessTTL and RefreshTTL are configured rather than compiled in, so the
 	// window of a stolen token can be changed without a release.
 	AccessTTL  time.Duration
@@ -80,6 +86,8 @@ func Load() Config {
 		Auth: Auth{
 			PrivateKeyPath: env("JWT_PRIVATE_KEY_PATH", "./certs/private.pem"),
 			PublicKeyPath:  env("JWT_PUBLIC_KEY_PATH", "./certs/public.pem"),
+			PrivateKeyPEM:  env("PRIVATE_KEY_JWT", ""),
+			PublicKeyPEM:   env("PUBLIC_KEY_JWT", ""),
 			Issuer:         env("JWT_ISSUER", "drop"),
 			AccessTTL:      envDuration("ACCESS_TOKEN_TTL", 15*time.Minute),
 			RefreshTTL:     envDuration("REFRESH_TOKEN_TTL", 720*time.Hour),

@@ -160,7 +160,10 @@ es público, y solo a quien corresponda si es privado.
 - **La API** usa `Authorization: Bearer <token>`, firmado con **RS256**. Nunca
   hay secretos compartidos: la clave que firma no es la que verifica. Genera el
   par con `make keys`; sin él el proceso no arranca, en vez de degradarse en
-  silencio a algo más débil.
+  silencio a algo más débil. En una plataforma sin filesystem donde escribir
+  (solo variables de entorno), pon el PEM directamente en `PRIVATE_KEY_JWT` /
+  `PUBLIC_KEY_JWT` en vez de `JWT_PRIVATE_KEY_PATH` / `JWT_PUBLIC_KEY_PATH`;
+  si el campo no admite saltos de línea reales, escríbelos como `\n` literal.
 - **No hay registro abierto.** Las cuentas nacen del administrador inicial o de
   una invitación de un solo uso, con caducidad. No se envía ningún correo: el
   enlace se muestra una vez y lo repartes tú. Solo se guarda su hash, así que un
@@ -265,6 +268,7 @@ La API lee [`api/.env`](api/.env).
 | `DROP_INJECT_WIDGET` | `true` | Inyecta el badge de Drop en las páginas HTML publicadas |
 | `JWT_PRIVATE_KEY_PATH` | `./certs/private.pem` | Clave RSA que firma los tokens (`make keys`) |
 | `JWT_PUBLIC_KEY_PATH` | `./certs/public.pem` | Clave pública que los verifica |
+| `PRIVATE_KEY_JWT` / `PUBLIC_KEY_JWT` | *(vacío)* | El mismo par, pero como PEM en la propia variable en vez de una ruta. Si se ponen **las dos**, tienen prioridad sobre `JWT_*_KEY_PATH` |
 | `JWT_ISSUER` | `drop` | Emisor que llevan los tokens |
 | `ACCESS_TOKEN_TTL` | `15m` | Caducidad del access token |
 | `REFRESH_TOKEN_TTL` | `720h` | Caducidad del refresh token y de la sesión del navegador |

@@ -52,12 +52,28 @@ func main() {
 
 	// Tokens are signed with RS256; there is no shared-secret fallback, so a
 	// missing keypair is a startup failure rather than a silent downgrade.
-	// `make keys` writes one.
-	keys, err := auth.LoadKeys(cfg.Auth.PrivateKeyPath, cfg.Auth.PublicKeyPath)
-	if err != nil {
-		slog.Error("load signing keys", "error", err,
-			"hint", "run `make keys` to generate them")
+	// PRIVATE_KEY_JWT/PUBLIC_KEY_JWT (the keypair itself) take priority over
+	// JWT_PRIVATE_KEY_PATH/JWT_PUBLIC_KEY_PATH (a path to it) when both are
+	// set, for platforms with no writable filesystem to point a path at;
+	// `make keys` is what writes the files the path-based default expects.
+	var keys *auth.Keys
+	switch {
+	case cfg.Auth.PrivateKeyPEM != "" && cfg.Auth.PublicKeyPEM != "":
+		keys, err = auth.KeysFromPEM([]byte(cfg.Auth.PrivateKeyPEM), []byte(cfg.Auth.PublicKeyPEM))
+		if err != nil {
+			slog.Error("load signing keys from PRIVATE_KEY_JWT/PUBLIC_KEY_JWT", "error", err)
+			os.Exit(1)
+		}
+	case cfg.Auth.PrivateKeyPEM != "" || cfg.Auth.PublicKeyPEM != "":
+		slog.Error("PRIVATE_KEY_JWT and PUBLIC_KEY_JWT must both be set, or both left empty to load from JWT_PRIVATE_KEY_PATH/JWT_PUBLIC_KEY_PATH")
 		os.Exit(1)
+	default:
+		keys, err = auth.LoadKeys(cfg.Auth.PrivateKeyPath, cfg.Auth.PublicKeyPath)
+		if err != nil {
+			slog.Error("load signing keys", "error", err,
+				"hint", "run `make keys` to generate them")
+			os.Exit(1)
+		}
 	}
 	issuer := auth.NewIssuer(keys, cfg.Auth.Issuer, cfg.Auth.AccessTTL, cfg.Auth.RefreshTTL)
 	accounts := auth.NewService(database, issuer, cfg.Auth.InvitationTTL)
