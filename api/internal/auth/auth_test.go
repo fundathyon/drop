@@ -311,6 +311,217 @@ func TestLogoutRevokesOnlyThatSession(t *testing.T) {
 	}
 }
 
+// ---------- setup ----------
+
+func TestNeedsSetupReflectsWhetherAnAdministratorExists(t *testing.T) {
+	ctx := context.Background()
+	svc := testService(t)
+
+	needs, err := svc.NeedsSetup(ctx)
+	if err != nil {
+		t.Fatalf("NeedsSetup: %v", err)
+	}
+	if !needs {
+		t.Fatal("a fresh instance should need setup")
+	}
+
+	if _, err := svc.Bootstrap(ctx, "admin@drop.local", "contraseña-larga"); err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+
+	needs, err = svc.NeedsSetup(ctx)
+	if err != nil {
+		t.Fatalf("NeedsSetup: %v", err)
+	}
+	if needs {
+		t.Fatal("an instance with an administrator should not need setup")
+	}
+}
+
+func TestSetupInstanceCreatesOrganizationAndAdministrator(t *testing.T) {
+	ctx := context.Background()
+	svc := testService(t)
+
+	tokens, admin, err := svc.SetupInstance(ctx, "Acme", "Admin", "admin@drop.local", "contraseña-larga", Device{IP: "127.0.0.1"})
+	if err != nil {
+		t.Fatalf("SetupInstance: %v", err)
+	}
+	if admin.Role != model.RoleAdmin || !admin.Active {
+		t.Fatalf("expected an active administrator, got %+v", admin)
+	}
+	if tokens.AccessToken == "" || tokens.RefreshToken == "" {
+		t.Fatal("expected SetupInstance to sign the administrator in")
+	}
+	if _, _, err := svc.Refresh(ctx, tokens.RefreshToken); err != nil {
+		t.Errorf("the session opened by setup should be usable: %v", err)
+	}
+
+	var stored model.User
+	if err := svc.db.First(&stored, admin.ID).Error; err != nil {
+		t.Fatalf("load stored user: %v", err)
+	}
+	if stored.OrganizationID == 0 {
+		t.Fatal("the administrator should belong to the organization setup created")
+	}
+
+	var org model.Organization
+	if err := svc.db.First(&org, stored.OrganizationID).Error; err != nil {
+		t.Fatalf("load organization: %v", err)
+	}
+	if org.Name != "Acme" {
+		t.Errorf("expected the organization name to be %q, got %q", "Acme", org.Name)
+	}
+
+	if needs, err := svc.NeedsSetup(ctx); err != nil {
+		t.Fatalf("NeedsSetup: %v", err)
+	} else if needs {
+		t.Fatal("the instance should be set up after SetupInstance succeeds")
+	}
+}
+
+func TestSetupInstanceOnlyRunsOnce(t *testing.T) {
+	ctx := context.Background()
+	svc := testService(t)
+
+	if _, _, err := svc.SetupInstance(ctx, "Acme", "Admin", "admin@drop.local", "contraseña-larga", Device{}); err != nil {
+		t.Fatalf("SetupInstance: %v", err)
+	}
+	if _, _, err := svc.SetupInstance(ctx, "Otra", "Otro", "otro@drop.local", "otra-contraseña", Device{}); !errors.Is(err, ErrAlreadySetUp) {
+		t.Fatalf("expected ErrAlreadySetUp, got %v", err)
+	}
+
+	// The refused second attempt must not have touched what the first created.
+	users, err := svc.ListUsers(ctx)
+	if err != nil {
+		t.Fatalf("ListUsers: %v", err)
+	}
+	if len(users) != 1 {
+		t.Fatalf("expected exactly one account, got %d", len(users))
+	}
+}
+
+func TestSetupInstanceValidatesInput(t *testing.T) {
+	ctx := context.Background()
+
+	cases := []struct {
+		name, org, email, password string
+	}{
+		{"blank organization", "", "admin@drop.local", "contraseña-larga"},
+		{"malformed email", "Acme", "not-an-email", "contraseña-larga"},
+		{"short password", "Acme", "admin@drop.local", "corta"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := testService(t)
+			if _, _, err := svc.SetupInstance(ctx, tc.org, "Admin", tc.email, tc.password, Device{}); !errors.Is(err, ErrInvalidInput) {
+				t.Fatalf("expected ErrInvalidInput, got %v", err)
+			}
+		})
+	}
+}
+
+func TestBackfillOrganizationsIsANoOpOnAFreshInstance(t *testing.T) {
+	ctx := context.Background()
+	svc := testService(t)
+
+	n, err := svc.BackfillOrganizations(ctx)
+	if err != nil {
+		t.Fatalf("BackfillOrganizations: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("expected no accounts to backfill, got %d", n)
+	}
+}
+
+// TestBackfillOrganizationsAdoptsAccountsFromBeforeOrganizationsExisted covers
+// what main.go relies on: a headlessly bootstrapped administrator, and any
+// account from a database written before organization_id existed, both still
+// sit at the migration's placeholder value until this runs.
+func TestBackfillOrganizationsAdoptsAccountsFromBeforeOrganizationsExisted(t *testing.T) {
+	ctx := context.Background()
+	svc := testService(t)
+
+	if _, err := svc.Bootstrap(ctx, "admin@drop.local", "contraseña-larga"); err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+
+	n, err := svc.BackfillOrganizations(ctx)
+	if err != nil {
+		t.Fatalf("BackfillOrganizations: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 account backfilled, got %d", n)
+	}
+
+	var user model.User
+	if err := svc.db.Where("email = ?", "admin@drop.local").First(&user).Error; err != nil {
+		t.Fatalf("load user: %v", err)
+	}
+	if user.OrganizationID == 0 {
+		t.Fatal("expected the account to have been given an organization")
+	}
+
+	// Idempotent: nothing left to backfill on a second pass.
+	n, err = svc.BackfillOrganizations(ctx)
+	if err != nil {
+		t.Fatalf("BackfillOrganizations again: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("expected nothing left to backfill the second time, got %d", n)
+	}
+}
+
+func TestAcceptInvitationJoinsTheExistingOrganization(t *testing.T) {
+	ctx := context.Background()
+	svc := testService(t)
+
+	_, admin, err := svc.SetupInstance(ctx, "Acme", "Admin", "admin@drop.local", "contraseña-larga", Device{})
+	if err != nil {
+		t.Fatalf("SetupInstance: %v", err)
+	}
+
+	_, token := mustInvite(t, svc, "otro@drop.local", model.RoleUser)
+	invited, err := svc.AcceptInvitation(ctx, token, "Otro", "otra-contraseña")
+	if err != nil {
+		t.Fatalf("AcceptInvitation: %v", err)
+	}
+
+	var invitedUser, adminUser model.User
+	if err := svc.db.First(&invitedUser, invited.ID).Error; err != nil {
+		t.Fatalf("load invited user: %v", err)
+	}
+	if err := svc.db.First(&adminUser, admin.ID).Error; err != nil {
+		t.Fatalf("load admin user: %v", err)
+	}
+	if invitedUser.OrganizationID != adminUser.OrganizationID {
+		t.Fatalf("expected the invited user to join the same organization, got %d vs %d",
+			invitedUser.OrganizationID, adminUser.OrganizationID)
+	}
+}
+
+// TestAcceptInvitationCreatesADefaultOrganizationWhenNoneExists exists because
+// every other invitation test in this file accepts one without ever calling
+// SetupInstance or Bootstrap first — ensureOrganization's fallback is what
+// keeps them (and any real invitation predating organizations) working.
+func TestAcceptInvitationCreatesADefaultOrganizationWhenNoneExists(t *testing.T) {
+	ctx := context.Background()
+	svc := testService(t)
+
+	_, token := mustInvite(t, svc, "otro@drop.local", model.RoleUser)
+	invited, err := svc.AcceptInvitation(ctx, token, "Otro", "otra-contraseña")
+	if err != nil {
+		t.Fatalf("AcceptInvitation: %v", err)
+	}
+
+	var stored model.User
+	if err := svc.db.First(&stored, invited.ID).Error; err != nil {
+		t.Fatalf("load invited user: %v", err)
+	}
+	if stored.OrganizationID == 0 {
+		t.Fatal("expected AcceptInvitation to create a default organization")
+	}
+}
+
 // ---------- invitations ----------
 
 func mustInvite(t *testing.T, svc *Service, email string, role model.Role) (InvitationInfo, string) {

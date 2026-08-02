@@ -62,26 +62,57 @@ func main() {
 	issuer := auth.NewIssuer(keys, cfg.Auth.Issuer, cfg.Auth.AccessTTL, cfg.Auth.RefreshTTL)
 	accounts := auth.NewService(database, issuer, cfg.Auth.InvitationTTL)
 
-	admin, err := accounts.Bootstrap(ctx, cfg.Auth.AdminEmail, cfg.Auth.AdminPassword)
-	if err != nil {
-		slog.Error("bootstrap administrator", "error", err)
+	// Headless bootstrap is opt-in and all-or-nothing: both ADMIN_EMAIL and
+	// ADMIN_PASSWORD set means a scripted/containerized deployment that pins
+	// its own credentials, so the administrator is created here rather than
+	// waiting on a browser. Exactly one set is almost certainly a typo, so it
+	// fails loudly instead of silently falling through to the wizard. Neither
+	// set — the default — leaves the database empty and the interactive
+	// /setup wizard creates the first administrator instead.
+	var admin auth.UserInfo
+	switch {
+	case cfg.Auth.AdminEmail != "" && cfg.Auth.AdminPassword != "":
+		admin, err = accounts.Bootstrap(ctx, cfg.Auth.AdminEmail, cfg.Auth.AdminPassword)
+		if err != nil {
+			slog.Error("bootstrap administrator", "error", err)
+			os.Exit(1)
+		}
+	case cfg.Auth.AdminEmail != "" || cfg.Auth.AdminPassword != "":
+		slog.Error("ADMIN_EMAIL and ADMIN_PASSWORD must both be set, or both left empty for the interactive setup wizard")
+		os.Exit(1)
+	default:
+		slog.Info("no administrator configured; waiting for the interactive setup wizard",
+			"setup", "http://localhost"+cfg.HTTPAddr+"/setup")
+	}
+
+	// Organizations arrived after users did. This covers both a database
+	// upgraded from before they existed and the account Bootstrap may have
+	// just created above, in the same pass — a fresh, still-empty database
+	// is left alone, since /setup creates the organization for that case.
+	if _, err := accounts.BackfillOrganizations(ctx); err != nil {
+		slog.Error("backfill organizations", "error", err)
 		os.Exit(1)
 	}
 
 	// The tree predates ownership on any database written before drives
 	// existed. It is handed to the administrator here, once there is somebody
-	// to hand it to; on every later start this matches nothing.
-	adopted, err := db.AdoptOwnerlessNodes(database, admin.ID)
-	if err != nil {
-		slog.Error("assign owners to existing nodes", "error", err)
-		os.Exit(1)
-	}
-	if adopted > 0 {
-		slog.Warn("existing drops had no owner and now belong to the administrator",
-			"nodes", adopted, "owner", admin.Email)
+	// to hand it to; on every later start this matches nothing. Skipped
+	// entirely when Bootstrap did not run above: the interactive wizard runs
+	// the same adoption once it creates the first administrator instead.
+	if admin.ID != 0 {
+		adopted, err := db.AdoptOwnerlessNodes(database, admin.ID)
+		if err != nil {
+			slog.Error("assign owners to existing nodes", "error", err)
+			os.Exit(1)
+		}
+		if adopted > 0 {
+			slog.Warn("existing drops had no owner and now belong to the administrator",
+				"nodes", adopted, "owner", admin.Email)
+		}
 	}
 
-	handler, err := httpapi.NewRouter(service.New(database, store, cfg.PublicBaseURL), httpapi.Config{
+	tree := service.New(database, store, cfg.PublicBaseURL)
+	handler, err := httpapi.NewRouter(tree, httpapi.Config{
 		AllowedOrigins: cfg.CORSOrigins,
 		InjectWidget:   cfg.InjectWidget,
 		Auth:           accounts,

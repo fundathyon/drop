@@ -80,7 +80,7 @@ func NewRouter(svc *service.Service, cfg Config) (http.Handler, error) {
 
 	r := gin.New()
 	r.MaxMultipartMemory = maxUploadMemory
-	r.Use(requestLogger(), gin.Recovery(), cors(cfg.AllowedOrigins))
+	r.Use(requestLogger(), gin.Recovery(), cors(cfg.AllowedOrigins), setupGate(cfg.Auth))
 
 	r.GET("/healthz", h.health)
 
@@ -137,13 +137,18 @@ func NewRouter(svc *service.Service, cfg Config) (http.Handler, error) {
 	})
 	r.GET("/docs/*any", session, ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	// Signing in, and the invitation link, are the only admin pages reachable
-	// without a session — everything else redirects here.
+	// Signing in, the invitation link, and the first-run wizard are the only
+	// admin pages reachable without a session — everything else redirects here.
 	r.GET("/login", auths.loginPage)
 	r.POST("/login", limitAttempts(limiter, auths.tooManyLogins), auths.login)
 	r.POST("/logout", auths.logout)
 	r.GET("/invitacion", auths.invitePage)
 	r.POST("/invitacion", auths.acceptInvite)
+	// setupGate above already keeps these two unreachable once an
+	// administrator exists; registered under the same no-session group as
+	// /login for that reason.
+	r.GET("/setup", auths.setupPage)
+	r.POST("/setup", auths.setup)
 
 	// The stylesheet and script are needed to render the login form itself, so
 	// they sit outside the session.

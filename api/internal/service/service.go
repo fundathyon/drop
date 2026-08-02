@@ -18,6 +18,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"gorm.io/gorm"
 
+	"drop/internal/db"
 	"drop/internal/model"
 )
 
@@ -57,6 +58,16 @@ func New(db *gorm.DB, store ObjectStore, publicBaseURL string) *Service {
 		objects:       store,
 		publicBaseURL: strings.TrimSuffix(publicBaseURL, "/"),
 	}
+}
+
+// AdoptOwnerlessNodes hands the pre-ownership tree to ownerID. main.go runs
+// the same migration for the headless bootstrap path; this exists so the
+// interactive setup wizard — which only reaches this Service, not the raw
+// database handle main.go has — can run it too, right after creating the
+// first administrator. Takes a context for a uniform call shape with the rest
+// of this type, even though the migration underneath does not use one.
+func (s *Service) AdoptOwnerlessNodes(_ context.Context, ownerID uint) (int64, error) {
+	return db.AdoptOwnerlessNodes(s.db, ownerID)
 }
 
 // PublicPathPrefix is where published drops are served from, keeping them out

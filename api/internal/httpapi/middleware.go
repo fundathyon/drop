@@ -111,6 +111,37 @@ func resolveSession(svc *auth.Service) gin.HandlerFunc {
 	}
 }
 
+// setupGate holds every route except the setup wizard itself closed until an
+// administrator exists. It runs after cors(): cors() answers an OPTIONS
+// preflight with AbortWithStatus and no c.Next(), so anything registered
+// ahead of it would never see a preflight request at all.
+func setupGate(svc *auth.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		path := c.Request.URL.Path
+		if path == "/setup" || path == "/healthz" || strings.HasPrefix(path, "/admin/static/") {
+			c.Next()
+			return
+		}
+
+		needsSetup, err := svc.NeedsSetup(c.Request.Context())
+		if err != nil {
+			abortWithError(c, http.StatusInternalServerError, "internal_error", "unexpected error")
+			return
+		}
+		if !needsSetup {
+			c.Next()
+			return
+		}
+
+		if strings.HasPrefix(path, "/v1/") {
+			abortWithError(c, http.StatusServiceUnavailable, "setup_required", "this instance has not been set up yet")
+			return
+		}
+		c.Redirect(http.StatusSeeOther, "/setup")
+		c.Abort()
+	}
+}
+
 // requireAdminAPI rejects a non-administrator on the JSON endpoints that manage
 // accounts.
 func requireAdminAPI(c *gin.Context) {
@@ -264,6 +295,8 @@ func authErrorStatus(err error) (int, string, string) {
 		return http.StatusGone, "invalid_invitation", err.Error()
 	case errors.Is(err, auth.ErrLastAdmin):
 		return http.StatusConflict, "last_admin", "this is the last active administrator"
+	case errors.Is(err, auth.ErrAlreadySetUp):
+		return http.StatusConflict, "already_set_up", "this instance is already set up"
 	case errors.Is(err, auth.ErrInvalidInput):
 		return http.StatusBadRequest, "invalid_body", err.Error()
 	default:

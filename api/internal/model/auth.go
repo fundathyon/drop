@@ -39,6 +39,10 @@ type User struct {
 	Name         string         `gorm:"size:255"`
 	PasswordHash string         `gorm:"not null;size:255"`
 	Role         Role           `gorm:"not null;size:32;index"`
+	// OrganizationID is the tenant this account belongs to. Every account has
+	// one, whether created by SetupInstance, Bootstrap (backfilled after by
+	// BackfillOrganizations) or an accepted invitation.
+	OrganizationID uint `gorm:"not null;index"`
 	// Active is the reversible half of removing someone; DeletedAt is the
 	// permanent-looking one. A deactivated user keeps their data and history.
 	Active bool `gorm:"not null;default:true"`

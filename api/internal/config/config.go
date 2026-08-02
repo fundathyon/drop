@@ -38,8 +38,11 @@ type Auth struct {
 	RefreshTTL time.Duration
 	// InvitationTTL is how long an invitation link stays usable.
 	InvitationTTL time.Duration
-	// AdminEmail and AdminPassword create the first administrator on an empty
-	// database. An existing admin is never modified from here.
+	// AdminEmail and AdminPassword create the first administrator headlessly
+	// on an empty database, for scripted or containerized deployments that
+	// pin credentials via secrets. Left empty (the default), an empty
+	// database instead waits for the interactive /setup wizard. An existing
+	// admin is never modified from here either way.
 	AdminEmail    string
 	AdminPassword string
 	// CookieSecure marks the refresh cookie Secure. It defaults to off so
@@ -81,8 +84,8 @@ func Load() Config {
 			AccessTTL:      envDuration("ACCESS_TOKEN_TTL", 15*time.Minute),
 			RefreshTTL:     envDuration("REFRESH_TOKEN_TTL", 720*time.Hour),
 			InvitationTTL:  envDuration("INVITATION_TTL", 72*time.Hour),
-			AdminEmail:     env("ADMIN_EMAIL", "admin@drop.local"),
-			AdminPassword:  env("ADMIN_PASSWORD", "admin"),
+			AdminEmail:     env("ADMIN_EMAIL", ""),
+			AdminPassword:  env("ADMIN_PASSWORD", ""),
 			CookieSecure:   envBool("AUTH_COOKIE_SECURE", false),
 		},
 	}

@@ -30,7 +30,7 @@ func Static() (fs.FS, error) { return fs.Sub(files, "static") }
 // pages are the template files that each supply a "content" and an "actions"
 // block. Every one is parsed together with the layout into its own set, because
 // a single set cannot hold two definitions of the same block name.
-var pages = []string{"explorer", "drop", "editor", "shared", "login", "invite", "users"}
+var pages = []string{"explorer", "drop", "editor", "shared", "login", "invite", "users", "setup"}
 
 // Renderer holds the parsed templates.
 type Renderer struct {
@@ -137,6 +137,18 @@ type LoginPage struct {
 	// Next is where to go once signed in, already checked to be a local path.
 	Next  string
 	Error string
+}
+
+// SetupPage is the first-run wizard: it exists exactly once per instance,
+// before there is an administrator to sign in as.
+type SetupPage struct {
+	Base
+	OrgName string
+	Name    string
+	Email   string
+	// MinLength is surfaced so the form states the rule the server enforces.
+	MinLength int
+	Error     string
 }
 
 // InvitePage is where an invited person sets their password.

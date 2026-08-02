@@ -70,8 +70,11 @@ make dev
 ```
 
 Levanta MinIO con docker compose, genera el par RSA que firma los tokens si no
-existe, y ejecuta el servidor desde el código en `:8000`. Entra con lo que haya
-en `ADMIN_EMAIL` / `ADMIN_PASSWORD` (por defecto `admin@drop.local` / `admin`).
+existe, y ejecuta el servidor desde el código en `:8000`. La primera vez que
+abras `http://localhost:8000` te pedirá configurar la organización, tu cuenta
+y la contraseña maestra — no hay contraseña por defecto. Para un despliegue
+sin navegador (Docker, CI…), define `ADMIN_EMAIL` y `ADMIN_PASSWORD` y ese
+administrador se crea solo al arrancar.
 
 Para compilar el binario y ejecutarlo:
 
@@ -165,13 +168,16 @@ es público, y solo a quien corresponda si es privado.
 - Las contraseñas se guardan con **Argon2id**, y entrar o refrescar están
   limitados por intentos.
 
-El primer administrador se crea al arrancar desde `ADMIN_EMAIL` y
-`ADMIN_PASSWORD` si no existe ninguno. Si ya existe, no se toca — ni su
-contraseña.
+La primera vez que se arranca sin ninguna cuenta, todo excepto `/setup` (y el
+healthcheck) redirige ahí: es el único momento en que una instancia vacía deja
+hacer algo. Ese formulario crea la organización y el administrador a la vez, y
+te deja ya identificado. Con `ADMIN_EMAIL` **y** `ADMIN_PASSWORD` puestos, ese
+paso se salta y el administrador se crea solo al arrancar en su lugar — pensado
+para Docker o CI, no para abrir en un navegador. Si ya existe un administrador,
+ninguna de las dos vías lo toca — ni su contraseña.
 
-> Cambia la contraseña del administrador inicial antes de exponer esto a nadie,
-> y pon `AUTH_COOKIE_SECURE=true` en cuanto no sea `localhost`, o el navegador
-> enviará la cookie de sesión por HTTP en claro.
+> Pon `AUTH_COOKIE_SECURE=true` en cuanto esto no sea `localhost`, o el
+> navegador enviará la cookie de sesión por HTTP en claro.
 
 ## Endpoints
 
@@ -179,6 +185,7 @@ contraseña.
 GET    /                            panel de administración (tu unidad)
 GET    /?owner=<id>&path=           una carpeta o drop de otra unidad
 GET    /compartido                  lo que otros han compartido contigo
+GET    /setup                       asistente de primer arranque (público; solo hasta que exista un admin)
 GET    /login                       entrar (público)
 GET    /invitacion?token=           aceptar una invitación (público)
 GET    /admin/edit?path=&name=      editor de un archivo del drop
@@ -215,12 +222,13 @@ POST   /v1/invitations              invitar {email, role}          (solo admin)
 DELETE /v1/invitations/{id}         revocar una invitación         (solo admin)
 ```
 
-Para usar la API desde un script, pide un token y mándalo en cada petición:
+Para usar la API desde un script, pide un token y mándalo en cada petición
+(sustituye por el email y la contraseña de tu propio administrador):
 
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8000/v1/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@drop.local","password":"admin"}' | jq -r .access_token)
+  -d '{"email":"admin@tu-dominio.com","password":"tu-contraseña"}' | jq -r .access_token)
 
 curl -X POST http://localhost:8000/v1/drops/upload \
   -H "Authorization: Bearer $TOKEN" \
@@ -261,7 +269,7 @@ La API lee [`api/.env`](api/.env).
 | `ACCESS_TOKEN_TTL` | `15m` | Caducidad del access token |
 | `REFRESH_TOKEN_TTL` | `720h` | Caducidad del refresh token y de la sesión del navegador |
 | `INVITATION_TTL` | `72h` | Cuánto sirve un enlace de invitación |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | `admin@drop.local` / `admin` | Administrador creado si no hay ninguno |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | *(vacío)* | Si se ponen **las dos**, crean el administrador al arrancar sin pasar por `/setup`. Deja ambas vacías para el asistente interactivo |
 | `AUTH_COOKIE_SECURE` | `false` | Marca la cookie de sesión como `Secure`; ponlo en `true` fuera de localhost |
 
 Ninguna caducidad está fijada en el código: todas salen de aquí, así que la

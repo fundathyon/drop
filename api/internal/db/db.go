@@ -44,7 +44,17 @@ func Open(dsn string) (*gorm.DB, error) {
 		}
 	}
 
+	// Organizations arrived after users did. Same placeholder-then-backfill
+	// shape as owner_id above; auth.Service.BackfillOrganizations replaces it
+	// once there is an organization to hand every account to.
+	if g.Migrator().HasTable(&model.User{}) && !g.Migrator().HasColumn(&model.User{}, "organization_id") {
+		if err := g.Exec("ALTER TABLE users ADD COLUMN organization_id integer NOT NULL DEFAULT 0").Error; err != nil {
+			return nil, fmt.Errorf("add organization column: %w", err)
+		}
+	}
+
 	if err := g.AutoMigrate(
+		&model.Organization{},
 		&model.Node{}, &model.Version{}, &model.File{},
 		&model.User{}, &model.Session{}, &model.Invitation{}, &model.Share{},
 	); err != nil {

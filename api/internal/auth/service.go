@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"gorm.io/gorm"
@@ -28,6 +30,9 @@ var (
 	// ErrLastAdmin stops the last administrator from being removed, which
 	// would leave nobody able to invite anyone back in.
 	ErrLastAdmin = errors.New("this is the last active administrator")
+	// ErrAlreadySetUp guards SetupInstance: it only ever gets to run once,
+	// against an empty instance.
+	ErrAlreadySetUp = errors.New("this instance is already set up")
 )
 
 // MinPasswordLength is deliberately a floor, not a composition rule: length is
@@ -41,6 +46,15 @@ type Service struct {
 	issuer *Issuer
 	// invitationTTL is how long a fresh invitation stays usable.
 	invitationTTL time.Duration
+	// setupMu serializes SetupInstance so two concurrent first requests
+	// cannot both pass the "no users yet" check and each create their own
+	// organization and administrator.
+	setupMu sync.Mutex
+	// setupDone caches "an administrator exists" once true, since NeedsSetup
+	// is checked on nearly every request until it is. It only ever goes
+	// false to true: guardLastAdmin makes the user count returning to zero
+	// through normal operation impossible.
+	setupDone atomic.Bool
 }
 
 func NewService(db *gorm.DB, issuer *Issuer, invitationTTL time.Duration) *Service {
@@ -157,6 +171,161 @@ func (s *Service) Bootstrap(ctx context.Context, email, password string) (UserIn
 	slog.Warn("created the bootstrap administrator; change this password",
 		"email", email)
 	return userInfo(&admin), nil
+}
+
+// ---------- setup ----------
+
+// NeedsSetup reports whether this instance still needs its first
+// administrator. It is checked on nearly every request until one exists,
+// hence the cache: once true is observed, the database is never asked again.
+func (s *Service) NeedsSetup(ctx context.Context) (bool, error) {
+	if s.setupDone.Load() {
+		return false, nil
+	}
+	var count int64
+	if err := s.db.WithContext(ctx).Model(&model.User{}).Count(&count).Error; err != nil {
+		return false, err
+	}
+	if count > 0 {
+		s.setupDone.Store(true)
+		return false, nil
+	}
+	return true, nil
+}
+
+// SetupInstance creates the organization and its first administrator
+// together — the one thing an empty instance lets happen, everything else
+// being gated behind an administrator existing — and signs them in at once.
+// Unlike AcceptInvitation, there is no separate person to double-check
+// against here: choosing the password is itself the confirmation.
+func (s *Service) SetupInstance(ctx context.Context, orgName, name, email, password string, device Device) (Tokens, UserInfo, error) {
+	orgName = strings.TrimSpace(orgName)
+	if orgName == "" {
+		return Tokens{}, UserInfo{}, fmt.Errorf("%w: an organization name is required", ErrInvalidInput)
+	}
+	email = normalizeEmail(email)
+	if !validEmail(email) {
+		return Tokens{}, UserInfo{}, fmt.Errorf("%w: a valid email is required", ErrInvalidInput)
+	}
+	if len([]rune(password)) < MinPasswordLength {
+		return Tokens{}, UserInfo{}, fmt.Errorf("%w: the password must be at least %d characters",
+			ErrInvalidInput, MinPasswordLength)
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name, _, _ = strings.Cut(email, "@")
+	}
+
+	// Hashing is deliberately slow (Argon2id); done before the lock so
+	// concurrent submissions never serialize on top of that cost too.
+	hash, err := HashPassword(password)
+	if err != nil {
+		return Tokens{}, UserInfo{}, err
+	}
+
+	s.setupMu.Lock()
+	defer s.setupMu.Unlock()
+
+	var existing int64
+	if err := s.db.WithContext(ctx).Model(&model.User{}).Count(&existing).Error; err != nil {
+		return Tokens{}, UserInfo{}, err
+	}
+	if existing > 0 {
+		s.setupDone.Store(true)
+		return Tokens{}, UserInfo{}, ErrAlreadySetUp
+	}
+
+	org := model.Organization{Name: orgName}
+	admin := model.User{
+		Email:        email,
+		Name:         name,
+		PasswordHash: hash,
+		Role:         model.RoleAdmin,
+		Active:       true,
+	}
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&org).Error; err != nil {
+			return err
+		}
+		admin.OrganizationID = org.ID
+		return tx.Create(&admin).Error
+	}); err != nil {
+		return Tokens{}, UserInfo{}, err
+	}
+	s.setupDone.Store(true)
+
+	tokens, err := s.openSession(ctx, &admin, device)
+	if err != nil {
+		return Tokens{}, UserInfo{}, err
+	}
+
+	now := time.Now().UTC()
+	admin.LastLoginAt = &now
+	if err := s.db.WithContext(ctx).Model(&admin).Update("last_login_at", now).Error; err != nil {
+		return Tokens{}, UserInfo{}, err
+	}
+
+	slog.Warn("instance set up", "email", admin.Email, "organization", org.Name)
+	return tokens, userInfo(&admin), nil
+}
+
+// ensureOrganization returns the id of the organization every account
+// belongs to, creating a default one if none exists yet. In real use that
+// only happens inside BackfillOrganizations, on a database upgraded from
+// before organizations existed — an invitation cannot exist before
+// SetupInstance or Bootstrap has already created one. The fallback is what
+// keeps a caller that creates a user without going through either — chiefly
+// tests — working with a consistent account instead of failing.
+func (s *Service) ensureOrganization(ctx context.Context, tx *gorm.DB) (uint, error) {
+	var org model.Organization
+	err := tx.WithContext(ctx).Order("id").First(&org).Error
+	if err == nil {
+		return org.ID, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, err
+	}
+	org = model.Organization{Name: "Default"}
+	if err := tx.WithContext(ctx).Create(&org).Error; err != nil {
+		return 0, err
+	}
+	return org.ID, nil
+}
+
+// BackfillOrganizations gives every account still at the placeholder
+// organization_id the shared organization, creating it if needed. Called
+// once at startup, right after Bootstrap (which may or may not have run)
+// and before the server starts accepting requests: it covers both a
+// database upgraded from before organizations existed and the account
+// Bootstrap just created from ADMIN_EMAIL/ADMIN_PASSWORD, in the same pass —
+// so Bootstrap itself never needs to know organizations exist. A fresh
+// install with nobody in it yet is left alone; the interactive setup wizard
+// creates the organization for that case instead.
+func (s *Service) BackfillOrganizations(ctx context.Context) (int64, error) {
+	var pending int64
+	if err := s.db.WithContext(ctx).Model(&model.User{}).
+		Where("organization_id = 0 OR organization_id IS NULL").Count(&pending).Error; err != nil {
+		return 0, err
+	}
+	if pending == 0 {
+		return 0, nil
+	}
+
+	orgID, err := s.ensureOrganization(ctx, s.db)
+	if err != nil {
+		return 0, err
+	}
+	result := s.db.WithContext(ctx).Model(&model.User{}).
+		Where("organization_id = 0 OR organization_id IS NULL").
+		Update("organization_id", orgID)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	if result.RowsAffected > 0 {
+		slog.Warn("existing accounts had no organization and now belong to one",
+			"accounts", result.RowsAffected)
+	}
+	return result.RowsAffected, nil
 }
 
 // ---------- sessions ----------
@@ -655,6 +824,11 @@ func (s *Service) AcceptInvitation(ctx context.Context, token, name, password st
 	// One transaction: an account created without its invitation being closed
 	// would leave the link working for a second person.
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		orgID, err := s.ensureOrganization(ctx, tx)
+		if err != nil {
+			return err
+		}
+		user.OrganizationID = orgID
 		if err := tx.Create(&user).Error; err != nil {
 			return err
 		}
