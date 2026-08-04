@@ -1,0 +1,15 @@
+{
+  "shared": {
+    "empty": "No one has shared anything with you yet.",
+    "emptyHint": "What others share with you shows up here, in their own drive.",
+    "nameHeader": "Name",
+    "typeHeader": "Type",
+    "ownerHeader": "Owner",
+    "accessHeader": "Access",
+    "sharedHeader": "Shared",
+    "dropBadge": "drop",
+    "folderBadge": "folder",
+    "editorBadge": "editor",
+    "viewerBadge": "viewer"
+  }
+}

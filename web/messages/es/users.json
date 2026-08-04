@@ -1,0 +1,50 @@
+{
+  "users": {
+    "breadcrumb": "Usuarios",
+    "invite": "Invitar",
+    "accountsTitle": "Cuentas",
+    "invitationsTitle": "Invitaciones",
+    "nameHeader": "Nombre",
+    "emailHeader": "Email",
+    "roleHeader": "Rol",
+    "statusHeader": "Estado",
+    "lastLoginHeader": "Último acceso",
+    "you": "tú",
+    "active": "activa",
+    "inactive": "desactivada",
+    "deactivate": "Desactivar",
+    "reactivate": "Reactivar",
+    "deleteUserAriaLabel": "Eliminar cuenta de {email}",
+    "deleteUserTitle": "¿Eliminar esta cuenta?",
+    "deleteUserDescription": "Se eliminará \"{email}\" y se cerrarán sus sesiones. Los drops que haya creado se quedan.",
+    "invitationStatus": {
+      "pending": "pendiente",
+      "accepted": "aceptada",
+      "expired": "caducada",
+      "revoked": "revocada"
+    },
+    "expiresAt": "caduca {date}",
+    "revoke": "Revocar",
+    "revokeInvitationTitle": "¿Revocar la invitación?",
+    "revokeInvitationDescription": "El enlace enviado a \"{email}\" dejará de funcionar.",
+    "inviteDialog": {
+      "description": "No se envía ningún correo: se genera un enlace de un solo uso que le haces llegar tú.",
+      "emailLabel": "Email",
+      "emailPlaceholder": "persona@ejemplo.com",
+      "roleLabel": "Rol",
+      "roleUser": "user",
+      "roleAdmin": "admin",
+      "submit": "Crear invitación",
+      "error": {
+        "invalidEmail": "Escribe un email válido.",
+        "alreadyExists": "Ese email ya tiene cuenta.",
+        "unexpected": "Error inesperado"
+      },
+      "linkTitle": "Enlace de invitación",
+      "linkDescription": "Cópialo y hazlo llegar por el canal que quieras. No se envía ningún correo, y este enlace no se puede volver a ver: si se pierde, se emite otra invitación.",
+      "linkAriaLabel": "Enlace de invitación",
+      "copy": "Copiar",
+      "copied": "Copiado"
+    }
+  }
+}

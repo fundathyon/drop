@@ -1,0 +1,15 @@
+{
+  "shared": {
+    "empty": "Nadie ha compartido nada contigo todavía.",
+    "emptyHint": "Lo que te compartan aparece aquí, en la unidad de quien lo comparte.",
+    "nameHeader": "Nombre",
+    "typeHeader": "Tipo",
+    "ownerHeader": "Dueño",
+    "accessHeader": "Acceso",
+    "sharedHeader": "Compartido",
+    "dropBadge": "drop",
+    "folderBadge": "carpeta",
+    "editorBadge": "editor",
+    "viewerBadge": "lector"
+  }
+}

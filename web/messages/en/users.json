@@ -1,0 +1,50 @@
+{
+  "users": {
+    "breadcrumb": "Users",
+    "invite": "Invite",
+    "accountsTitle": "Accounts",
+    "invitationsTitle": "Invitations",
+    "nameHeader": "Name",
+    "emailHeader": "Email",
+    "roleHeader": "Role",
+    "statusHeader": "Status",
+    "lastLoginHeader": "Last login",
+    "you": "you",
+    "active": "active",
+    "inactive": "disabled",
+    "deactivate": "Disable",
+    "reactivate": "Reactivate",
+    "deleteUserAriaLabel": "Delete account for {email}",
+    "deleteUserTitle": "Delete this account?",
+    "deleteUserDescription": "\"{email}\" will be deleted and their sessions closed. Drops they created stay in place.",
+    "invitationStatus": {
+      "pending": "pending",
+      "accepted": "accepted",
+      "expired": "expired",
+      "revoked": "revoked"
+    },
+    "expiresAt": "expires {date}",
+    "revoke": "Revoke",
+    "revokeInvitationTitle": "Revoke this invitation?",
+    "revokeInvitationDescription": "The link sent to \"{email}\" will stop working.",
+    "inviteDialog": {
+      "description": "No email is sent: a single-use link is generated for you to pass along.",
+      "emailLabel": "Email",
+      "emailPlaceholder": "person@example.com",
+      "roleLabel": "Role",
+      "roleUser": "user",
+      "roleAdmin": "admin",
+      "submit": "Create invitation",
+      "error": {
+        "invalidEmail": "Enter a valid email.",
+        "alreadyExists": "That email already has an account.",
+        "unexpected": "Unexpected error"
+      },
+      "linkTitle": "Invitation link",
+      "linkDescription": "Copy it and pass it along however you like. No email is sent, and this link cannot be shown again — if it's lost, issue another invitation.",
+      "linkAriaLabel": "Invitation link",
+      "copy": "Copy",
+      "copied": "Copied"
+    }
+  }
+}
