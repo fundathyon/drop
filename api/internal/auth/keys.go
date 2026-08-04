@@ -40,16 +40,68 @@ func LoadKeys(privatePath, publicPath string) (*Keys, error) {
 // KeysFromPEM builds a keypair from PEM-encoded key material already in
 // memory, for deployments that inject the keypair through environment
 // variables (PRIVATE_KEY_JWT/PUBLIC_KEY_JWT) rather than mounting files —
-// some hosting platforms only offer the former. A literal `\n` is unescaped
-// first, since a value pasted into a single-line env var field commonly
-// carries its line breaks that way rather than as real newlines.
+// some hosting platforms only offer the former. The line breaks a multi-line
+// PEM needs rarely survive a single-line env var field intact, so this
+// recovers them however they came through: as literal `\n` escapes, or —
+// Dokploy does this — collapsed to plain spaces, which loses the line
+// structure entirely and has to be rebuilt from the PEM grammar itself.
 func KeysFromPEM(privatePEM, publicPEM []byte) (*Keys, error) {
-	return newKeys(unescapeNewlines(privatePEM), unescapeNewlines(publicPEM),
+	return newKeys(normalizePEM(privatePEM), normalizePEM(publicPEM),
 		"PRIVATE_KEY_JWT", "PUBLIC_KEY_JWT")
 }
 
-func unescapeNewlines(raw []byte) []byte {
-	return []byte(strings.ReplaceAll(string(raw), `\n`, "\n"))
+// normalizePEM tries each known way a PEM value comes back mangled, in order
+// from least to most destructive to undo, stopping as soon as one decodes.
+func normalizePEM(raw []byte) []byte {
+	if block, _ := pem.Decode(raw); block != nil {
+		return raw
+	}
+	unescaped := []byte(strings.ReplaceAll(string(raw), `\n`, "\n"))
+	if block, _ := pem.Decode(unescaped); block != nil {
+		return unescaped
+	}
+	return rewrapSpaceCollapsedPEM(unescaped)
+}
+
+// rewrapSpaceCollapsedPEM rebuilds line breaks in a PEM whose newlines were
+// all replaced with spaces. The header/footer ("-----BEGIN RSA PRIVATE
+// KEY-----") is itself made of space-separated words, so the split can't
+// just be "one line per space" — instead it looks for the token that ends
+// the "-----BEGIN ...-----" marker and the token that starts the
+// "-----END ...-----" one, and treats everything between them as one
+// base64 line per token, which is how it was wrapped before losing its
+// newlines (the base64 alphabet itself never contains spaces).
+func rewrapSpaceCollapsedPEM(raw []byte) []byte {
+	fields := strings.Fields(string(raw))
+
+	headerEnd := -1
+	for i, f := range fields {
+		if i > 0 && strings.HasSuffix(f, "-----") {
+			headerEnd = i
+			break
+		}
+	}
+	if headerEnd == -1 {
+		return raw
+	}
+
+	footerStart := -1
+	for i := headerEnd + 1; i < len(fields); i++ {
+		if strings.HasPrefix(fields[i], "-----END") {
+			footerStart = i
+			break
+		}
+	}
+	if footerStart == -1 {
+		return raw
+	}
+
+	lines := make([]string, 0, footerStart-headerEnd+2)
+	lines = append(lines, strings.Join(fields[:headerEnd+1], " "))
+	lines = append(lines, fields[headerEnd+1:footerStart]...)
+	lines = append(lines, strings.Join(fields[footerStart:], " "))
+
+	return []byte(strings.Join(lines, "\n") + "\n")
 }
 
 // newKeys parses and validates a keypair already in memory. privateSource and

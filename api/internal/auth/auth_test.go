@@ -236,6 +236,31 @@ func TestKeysFromPEMUnescapesLiteralNewlines(t *testing.T) {
 	}
 }
 
+// TestKeysFromPEMRewrapsSpaceCollapsedPEM covers Dokploy specifically: it
+// stores a single-line env var value with every newline turned into a plain
+// space rather than an escaped `\n`, which loses the line structure a PEM
+// block needs entirely — it has to be rebuilt from the header/footer markers
+// instead of just swapping a character back for another.
+func TestKeysFromPEMRewrapsSpaceCollapsedPEM(t *testing.T) {
+	key, _ := rsa.GenerateKey(rand.Reader, 2048)
+	privDER, _ := x509.MarshalPKCS8PrivateKey(key)
+	pubDER, _ := x509.MarshalPKIXPublicKey(&key.PublicKey)
+	privatePEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: privDER})
+	publicPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER})
+
+	collapse := func(b []byte) []byte {
+		return []byte(strings.Join(strings.Fields(strings.ReplaceAll(string(b), "\n", " ")), " "))
+	}
+
+	keys, err := KeysFromPEM(collapse(privatePEM), collapse(publicPEM))
+	if err != nil {
+		t.Fatalf("KeysFromPEM with space-collapsed newlines: %v", err)
+	}
+	if !keys.Private.PublicKey.Equal(keys.Public) {
+		t.Fatal("recovered keypair does not match itself")
+	}
+}
+
 func TestKeysFromPEMRejectsAMismatchedPair(t *testing.T) {
 	a, _ := rsa.GenerateKey(rand.Reader, 2048)
 	b, _ := rsa.GenerateKey(rand.Reader, 2048)
