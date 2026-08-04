@@ -860,6 +860,87 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/invitations/accept": {
+            "post": {
+                "description": "The invitation carries the email address, so only a name and a password are asked for. Does not sign the new account in — the password just chosen is the one immediately used to log in.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "invitations"
+                ],
+                "summary": "Create the account behind a pending invitation",
+                "parameters": [
+                    {
+                        "description": "Token and chosen password",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.AcceptInvitationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/drop_internal_auth.UserInfo"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/invitations/by-token": {
+            "get": {
+                "description": "Lets the acceptance page decide what to show before asking for a password. Answers 410 once the invitation is no longer usable — already accepted, expired, or revoked.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "invitations"
+                ],
+                "summary": "Preview an invitation before accepting it",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Invitation token",
+                        "name": "token",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/drop_internal_auth.InvitationInfo"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/v1/invitations/{id}": {
             "delete": {
                 "security": [
@@ -1039,6 +1120,253 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/setup": {
+            "post": {
+                "description": "The one thing an empty instance lets happen; everything else stays behind setupGate until this succeeds. Signs the new administrator in, same as login.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "setup"
+                ],
+                "summary": "Create the organization and its first administrator",
+                "parameters": [
+                    {
+                        "description": "Organization and administrator",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.SetupRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.TokenResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/setup/status": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "setup"
+                ],
+                "summary": "Report whether this instance still needs its first administrator",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.SetupStatusResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/shared": {
+            "get": {
+                "description": "Only the granted nodes themselves, not what is inside them — the same way Drive shows the shared folder rather than every file under it.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sharing"
+                ],
+                "summary": "List what other people have shared with the caller",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.SharedResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/shares": {
+            "get": {
+                "description": "Candidates excludes the node's owner and any disabled account, the same filter the admin UI applies before offering a share dialog.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sharing"
+                ],
+                "summary": "List who has access to a node, and who could still be given some",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "proyectos/arquitectura",
+                        "description": "Node path",
+                        "name": "path",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ShareListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Sharing again at a different level changes it in place rather than erroring: exactly one grant exists per (node, user).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sharing"
+                ],
+                "summary": "Grant or update a user's access to a node",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "proyectos/arquitectura",
+                        "description": "Node path",
+                        "name": "path",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "description": "Who, and at what level",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ShareRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/drop_internal_service.ShareInfo"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "The owner may revoke any grant; an editor may only revoke grants they personally created.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sharing"
+                ],
+                "summary": "Revoke a user's access to a node",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "proyectos/arquitectura",
+                        "description": "Node path",
+                        "name": "path",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "User to revoke",
+                        "name": "user_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "revoked"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_httpapi.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/internal_httpapi.ErrorResponse"
                         }
@@ -1314,6 +1642,17 @@ const docTemplate = `{
                 }
             }
         },
+        "drop_internal_model.Access": {
+            "type": "string",
+            "enum": [
+                "viewer",
+                "editor"
+            ],
+            "x-enum-varnames": [
+                "AccessViewer",
+                "AccessEditor"
+            ]
+        },
         "drop_internal_model.InvitationStatus": {
             "type": "string",
             "enum": [
@@ -1545,6 +1884,102 @@ const docTemplate = `{
                 }
             }
         },
+        "drop_internal_service.ShareInfo": {
+            "type": "object",
+            "properties": {
+                "access": {
+                    "enum": [
+                        "viewer",
+                        "editor"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/drop_internal_service.Access"
+                        }
+                    ],
+                    "example": "viewer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by_id": {
+                    "description": "CreatedByID is who granted it, which is what lets an editor tell their\nown grants apart from the owner's.",
+                    "type": "integer",
+                    "example": 1
+                },
+                "email": {
+                    "type": "string",
+                    "example": "rafa@ejemplo.com"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Rafa"
+                },
+                "user_id": {
+                    "type": "integer",
+                    "example": 2
+                }
+            }
+        },
+        "drop_internal_service.SharedNode": {
+            "type": "object",
+            "properties": {
+                "access": {
+                    "description": "Access is what the grant allows: viewer or editor.",
+                    "enum": [
+                        "viewer",
+                        "editor"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/drop_internal_service.Access"
+                        }
+                    ],
+                    "example": "viewer"
+                },
+                "kind": {
+                    "enum": [
+                        "folder",
+                        "drop"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/drop_internal_model.Kind"
+                        }
+                    ],
+                    "example": "drop"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "arquitectura"
+                },
+                "owner": {
+                    "description": "Owner is whose drive it lives in. A path only identifies a node together\nwith this, since every user has their own tree.",
+                    "type": "integer",
+                    "example": 1
+                },
+                "owner_email": {
+                    "type": "string",
+                    "example": "rafa@ejemplo.com"
+                },
+                "owner_name": {
+                    "description": "OwnerName and OwnerEmail identify whose drive it lives in, because a\npath alone says nothing about that.",
+                    "type": "string",
+                    "example": "Rafa"
+                },
+                "path": {
+                    "type": "string",
+                    "example": "proyectos/arquitectura"
+                },
+                "shared_at": {
+                    "type": "string"
+                }
+            }
+        },
         "drop_internal_service.VersionInfo": {
             "type": "object",
             "properties": {
@@ -1576,6 +2011,29 @@ const docTemplate = `{
                     "description": "URL pins this snapshot, and keeps working after later uploads.",
                     "type": "string",
                     "example": "http://localhost:8000/d/An1UHNyp/@2/"
+                }
+            }
+        },
+        "internal_httpapi.AcceptInvitationRequest": {
+            "type": "object",
+            "required": [
+                "password",
+                "password_confirm",
+                "token"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "example": "Rafa"
+                },
+                "password": {
+                    "type": "string"
+                },
+                "password_confirm": {
+                    "type": "string"
+                },
+                "token": {
+                    "type": "string"
                 }
             }
         },
@@ -1795,6 +2253,101 @@ const docTemplate = `{
                 "active": {
                     "type": "boolean",
                     "example": false
+                }
+            }
+        },
+        "internal_httpapi.SetupRequest": {
+            "type": "object",
+            "required": [
+                "email",
+                "org_name",
+                "password",
+                "password_confirm"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "admin@drop.local"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Rafa"
+                },
+                "org_name": {
+                    "type": "string",
+                    "example": "Acme"
+                },
+                "password": {
+                    "type": "string"
+                },
+                "password_confirm": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_httpapi.SetupStatusResponse": {
+            "type": "object",
+            "properties": {
+                "needs_setup": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "internal_httpapi.ShareListResponse": {
+            "type": "object",
+            "properties": {
+                "candidates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/drop_internal_auth.UserInfo"
+                    }
+                },
+                "path": {
+                    "type": "string",
+                    "example": "proyectos/arquitectura"
+                },
+                "shares": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/drop_internal_service.ShareInfo"
+                    }
+                }
+            }
+        },
+        "internal_httpapi.ShareRequest": {
+            "type": "object",
+            "required": [
+                "access",
+                "user_id"
+            ],
+            "properties": {
+                "access": {
+                    "enum": [
+                        "viewer",
+                        "editor"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/drop_internal_model.Access"
+                        }
+                    ],
+                    "example": "viewer"
+                },
+                "user_id": {
+                    "type": "integer",
+                    "example": 2
+                }
+            }
+        },
+        "internal_httpapi.SharedResponse": {
+            "type": "object",
+            "properties": {
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/drop_internal_service.SharedNode"
+                    }
                 }
             }
         },

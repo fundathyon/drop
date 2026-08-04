@@ -57,6 +57,14 @@ definitions:
         - user
         example: admin
     type: object
+  drop_internal_model.Access:
+    enum:
+    - viewer
+    - editor
+    type: string
+    x-enum-varnames:
+    - AccessViewer
+    - AccessEditor
   drop_internal_model.InvitationStatus:
     enum:
     - pending
@@ -237,6 +245,77 @@ definitions:
         example: proyectos/arquitectura
         type: string
     type: object
+  drop_internal_service.ShareInfo:
+    properties:
+      access:
+        allOf:
+        - $ref: '#/definitions/drop_internal_service.Access'
+        enum:
+        - viewer
+        - editor
+        example: viewer
+      created_at:
+        type: string
+      created_by_id:
+        description: |-
+          CreatedByID is who granted it, which is what lets an editor tell their
+          own grants apart from the owner's.
+        example: 1
+        type: integer
+      email:
+        example: rafa@ejemplo.com
+        type: string
+      id:
+        example: 1
+        type: integer
+      name:
+        example: Rafa
+        type: string
+      user_id:
+        example: 2
+        type: integer
+    type: object
+  drop_internal_service.SharedNode:
+    properties:
+      access:
+        allOf:
+        - $ref: '#/definitions/drop_internal_service.Access'
+        description: 'Access is what the grant allows: viewer or editor.'
+        enum:
+        - viewer
+        - editor
+        example: viewer
+      kind:
+        allOf:
+        - $ref: '#/definitions/drop_internal_model.Kind'
+        enum:
+        - folder
+        - drop
+        example: drop
+      name:
+        example: arquitectura
+        type: string
+      owner:
+        description: |-
+          Owner is whose drive it lives in. A path only identifies a node together
+          with this, since every user has their own tree.
+        example: 1
+        type: integer
+      owner_email:
+        example: rafa@ejemplo.com
+        type: string
+      owner_name:
+        description: |-
+          OwnerName and OwnerEmail identify whose drive it lives in, because a
+          path alone says nothing about that.
+        example: Rafa
+        type: string
+      path:
+        example: proyectos/arquitectura
+        type: string
+      shared_at:
+        type: string
+    type: object
   drop_internal_service.VersionInfo:
     properties:
       current:
@@ -261,6 +340,22 @@ definitions:
         description: URL pins this snapshot, and keeps working after later uploads.
         example: http://localhost:8000/d/An1UHNyp/@2/
         type: string
+    type: object
+  internal_httpapi.AcceptInvitationRequest:
+    properties:
+      name:
+        example: Rafa
+        type: string
+      password:
+        type: string
+      password_confirm:
+        type: string
+      token:
+        type: string
+    required:
+    - password
+    - password_confirm
+    - token
     type: object
   internal_httpapi.ActivateVersionRequest:
     properties:
@@ -407,6 +502,70 @@ definitions:
         type: boolean
     required:
     - active
+    type: object
+  internal_httpapi.SetupRequest:
+    properties:
+      email:
+        example: admin@drop.local
+        type: string
+      name:
+        example: Rafa
+        type: string
+      org_name:
+        example: Acme
+        type: string
+      password:
+        type: string
+      password_confirm:
+        type: string
+    required:
+    - email
+    - org_name
+    - password
+    - password_confirm
+    type: object
+  internal_httpapi.SetupStatusResponse:
+    properties:
+      needs_setup:
+        example: true
+        type: boolean
+    type: object
+  internal_httpapi.ShareListResponse:
+    properties:
+      candidates:
+        items:
+          $ref: '#/definitions/drop_internal_auth.UserInfo'
+        type: array
+      path:
+        example: proyectos/arquitectura
+        type: string
+      shares:
+        items:
+          $ref: '#/definitions/drop_internal_service.ShareInfo'
+        type: array
+    type: object
+  internal_httpapi.ShareRequest:
+    properties:
+      access:
+        allOf:
+        - $ref: '#/definitions/drop_internal_model.Access'
+        enum:
+        - viewer
+        - editor
+        example: viewer
+      user_id:
+        example: 2
+        type: integer
+    required:
+    - access
+    - user_id
+    type: object
+  internal_httpapi.SharedResponse:
+    properties:
+      nodes:
+        items:
+          $ref: '#/definitions/drop_internal_service.SharedNode'
+        type: array
     type: object
   internal_httpapi.TokenResponse:
     properties:
@@ -1073,6 +1232,63 @@ paths:
       summary: Revoke an invitation
       tags:
       - invitations
+  /v1/invitations/accept:
+    post:
+      consumes:
+      - application/json
+      description: The invitation carries the email address, so only a name and a
+        password are asked for. Does not sign the new account in — the password just
+        chosen is the one immediately used to log in.
+      parameters:
+      - description: Token and chosen password
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_httpapi.AcceptInvitationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/drop_internal_auth.UserInfo'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "410":
+          description: Gone
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      summary: Create the account behind a pending invitation
+      tags:
+      - invitations
+  /v1/invitations/by-token:
+    get:
+      description: Lets the acceptance page decide what to show before asking for
+        a password. Answers 410 once the invitation is no longer usable — already
+        accepted, expired, or revoked.
+      parameters:
+      - description: Invitation token
+        in: query
+        name: token
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/drop_internal_auth.InvitationInfo'
+        "410":
+          description: Gone
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      summary: Preview an invitation before accepting it
+      tags:
+      - invitations
   /v1/nodes:
     delete:
       description: Deletes the node and everything beneath it, including the stored
@@ -1165,6 +1381,176 @@ paths:
       summary: Create a folder
       tags:
       - nodes
+  /v1/setup:
+    post:
+      consumes:
+      - application/json
+      description: The one thing an empty instance lets happen; everything else stays
+        behind setupGate until this succeeds. Signs the new administrator in, same
+        as login.
+      parameters:
+      - description: Organization and administrator
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_httpapi.SetupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_httpapi.TokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      summary: Create the organization and its first administrator
+      tags:
+      - setup
+  /v1/setup/status:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_httpapi.SetupStatusResponse'
+      summary: Report whether this instance still needs its first administrator
+      tags:
+      - setup
+  /v1/shared:
+    get:
+      description: Only the granted nodes themselves, not what is inside them — the
+        same way Drive shows the shared folder rather than every file under it.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_httpapi.SharedResponse'
+      summary: List what other people have shared with the caller
+      tags:
+      - sharing
+  /v1/shares:
+    delete:
+      description: The owner may revoke any grant; an editor may only revoke grants
+        they personally created.
+      parameters:
+      - description: Node path
+        example: proyectos/arquitectura
+        in: query
+        name: path
+        required: true
+        type: string
+      - description: User to revoke
+        in: query
+        name: user_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: revoked
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      summary: Revoke a user's access to a node
+      tags:
+      - sharing
+    get:
+      description: Candidates excludes the node's owner and any disabled account,
+        the same filter the admin UI applies before offering a share dialog.
+      parameters:
+      - description: Node path
+        example: proyectos/arquitectura
+        in: query
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_httpapi.ShareListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      summary: List who has access to a node, and who could still be given some
+      tags:
+      - sharing
+    post:
+      consumes:
+      - application/json
+      description: 'Sharing again at a different level changes it in place rather
+        than erroring: exactly one grant exists per (node, user).'
+      parameters:
+      - description: Node path
+        example: proyectos/arquitectura
+        in: query
+        name: path
+        required: true
+        type: string
+      - description: Who, and at what level
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_httpapi.ShareRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/drop_internal_service.ShareInfo'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_httpapi.ErrorResponse'
+      summary: Grant or update a user's access to a node
+      tags:
+      - sharing
   /v1/users:
     get:
       produces:
