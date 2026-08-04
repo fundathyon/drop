@@ -24,5 +24,51 @@ services:
     # there is no init container here: a one-shot container that exits is
     # neither running nor healthy, which makes `up --wait` report a failure.
 
+  # The Go API — behind the "full" profile so `docker compose up` on its own
+  # still means "just MinIO", the shape local `make dev` (running the API
+  # from source) expects. `docker compose --profile full up` is the one
+  # command that runs the whole thing, API and frontend included: run
+  # `make keys` first so ./api/certs has a keypair to mount in.
+  api:
+    profiles: ["full"]
+    build: ./api
+    ports:
+      - "8000:8000"
+    environment:
+      DROP_DATABASE_DSN: /data/drop.db
+      DROP_S3_ENDPOINT: minio:9000
+      DROP_S3_ACCESS_KEY: ${DROP_S3_ACCESS_KEY:-dropadmin}
+      DROP_S3_SECRET_KEY: ${DROP_S3_SECRET_KEY:-dropadmin123}
+      DROP_CORS_ORIGINS: http://localhost:3000
+      JWT_PRIVATE_KEY_PATH: /certs/private.pem
+      JWT_PUBLIC_KEY_PATH: /certs/public.pem
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+    volumes:
+      - api-data:/data
+      - ./api/certs:/certs:ro
+    depends_on:
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # The Next.js admin frontend. Talks to `api` over the compose network, not
+  # through the published :8000 port a browser would use.
+  web:
+    profiles: ["full"]
+    build: ./web
+    ports:
+      - "3000:3000"
+    environment:
+      DROP_API_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+
 volumes:
   minio-data:
+  api-data:

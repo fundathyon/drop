@@ -1,0 +1,5 @@
+dropd
+drop.db
+dropstore/
+certs/
+.env

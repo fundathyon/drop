@@ -1,12 +1,17 @@
 # Drop
 
-Plataforma para publicar artefactos HTML estáticos. Todo vive en
-[`api/`](api) y `go build` produce **un solo binario** que sirve el admin, la
-API y los drops publicados: Go + Gin, GORM sobre SQLite, MinIO y Swagger.
+Plataforma para publicar artefactos HTML estáticos. Dos servicios:
 
-El admin se renderiza en el servidor con `html/template`, y sus plantillas y
-CSS se empotran con `go:embed` desde el propio código fuente. No hay paso de
-build de frontend, ni Node, ni bundle: compilar el proyecto es compilar Go.
+- [`api/`](api) — Go + Gin, GORM sobre SQLite, MinIO y Swagger. `go build`
+  produce **un solo binario** que sirve la API JSON y los drops publicados.
+- [`web/`](web) — Next.js (App Router) + Bun, el panel de administración.
+  Server Components y Server Actions llaman a la API **desde el servidor de
+  Next**, nunca desde el navegador: el navegador solo habla con `web`.
+
+El admin dejó de renderizarse en Go — vivió ahí como páginas `html/template`
+empotradas con `go:embed` hasta que se separó en `web/`. La API en sí no
+cambió: sigue siendo la misma bajo `/v1`, con `Authorization: Bearer` como
+único mecanismo de sesión.
 
 El diseño completo del sistema vive en [`docs/design/`](docs/design/README.md).
 
@@ -62,43 +67,51 @@ historial (se desactiva con `DROP_INJECT_WIDGET=false`).
 
 ## Cómo ejecutarlo
 
-Requisitos: Go y un runtime de contenedores para MinIO (Docker, colima,
-OrbStack…).
+Requisitos: Go, Bun, y un runtime de contenedores para MinIO (Docker, colima,
+OrbStack…) — o solo Docker, si prefieres correr todo containerizado.
+
+**La forma más simple, un solo comando:**
 
 ```bash
-make dev
+make up-all
 ```
 
-Levanta MinIO con docker compose, genera el par RSA que firma los tokens si no
-existe, y ejecuta el servidor desde el código en `:8000`. La primera vez que
-abras `http://localhost:8000` te pedirá configurar la organización, tu cuenta
-y la contraseña maestra — no hay contraseña por defecto. Para un despliegue
-sin navegador (Docker, CI…), define `ADMIN_EMAIL` y `ADMIN_PASSWORD` y ese
-administrador se crea solo al arrancar.
+Genera el par de claves si hace falta, y construye y levanta MinIO, la API y el
+admin con `docker compose`. Todo queda arriba en un par de minutos:
+`http://localhost:3000` es el panel, `http://localhost:8000` la API. `make
+down-all` lo baja.
 
-Para compilar el binario y ejecutarlo:
+**Para desarrollar, con recarga en caliente**, en dos terminales:
 
 ```bash
-make build && make run
+make dev       # MinIO + la API desde el código, en :8000
+make dev-web   # el admin desde el código, en :3000
 ```
 
-Todo queda en `:8000`: el admin en `/`, la API en `/v1`, los drops en `/d` y la
-documentación en `/docs`. Otros targets:
+La primera vez que abras `http://localhost:3000` te pedirá configurar la
+organización, tu cuenta y la contraseña maestra — no hay contraseña por
+defecto. Para un despliegue sin navegador (Docker, CI…), define `ADMIN_EMAIL` y
+`ADMIN_PASSWORD` en `api/.env` y ese administrador se crea solo al arrancar.
+
+Otros targets:
 
 ```bash
-make help      # lista todos los targets
-make seed      # llena el árbol con contenido de demo vía la API real
-make up/down   # solo el stack de MinIO
-make test      # go test + go vet
-make swagger   # regenera el OpenAPI desde las anotaciones
-make build     # compila el binario único (admin + API + drops)
-make run       # ejecuta el binario compilado
-make clean     # borra binarios, la DB local y los volúmenes de MinIO
+make help       # lista todos los targets
+make seed       # llena el árbol con contenido de demo vía la API real
+make up/down    # solo el stack de MinIO
+make up-all/down-all  # todo containerizado (MinIO + API + web)
+make test       # go test + go vet
+make test-web   # typecheck + lint + test del frontend
+make swagger    # regenera el OpenAPI desde las anotaciones
+make build      # compila el binario de la API
+make build-web  # build de producción del frontend
+make run        # ejecuta el binario de la API ya compilado
+make clean      # borra binarios, la DB local y los volúmenes de MinIO
 ```
 
 | Servicio | URL |
 |---|---|
-| Panel de administración | http://localhost:8000 |
+| Panel de administración | http://localhost:3000 |
 | API | http://localhost:8000/v1 |
 | **Swagger UI** | **http://localhost:8000/docs** |
 | Consola de MinIO | http://localhost:9001 (`dropadmin` / `dropadmin123`) |
@@ -147,23 +160,33 @@ ni siquiera a quien lo subió.
 Como un drop privado contesta distinto según quién pregunte, sus respuestas
 salen con `Cache-Control: private, no-store` y todo `/d/` lleva `Vary: Cookie`.
 
+> El panel llama a la API **desde el servidor de Next**, con el bearer token —
+> nunca desde el navegador. Por eso abrir la URL pública de un drop *privado*
+> directamente (fuera del panel) solo funciona para quien tenga sesión con la
+> propia API; es una limitación conocida de tener el admin en otro origen, no
+> un agujero de seguridad (un drop privado sigue respondiendo 404 a cualquier
+> otra persona). `public` y `unlisted` no se ven afectados: no comprueban
+> sesión en absoluto.
+
 ## Autenticación
 
-Todo pide credenciales menos lo que tiene que ser público: `/healthz`, los
-drops publicados en `/d/`, el formulario de entrada y los enlaces de invitación.
-En `/d/` la sesión se resuelve pero no se exige: sirve a cualquiera si el drop
-es público, y solo a quien corresponda si es privado.
+Todo pide un token menos lo que tiene que ser público: `/healthz`, los drops
+publicados en `/d/`, el estado y el envío de `/v1/setup`, y la vista previa y
+aceptación de una invitación. En `/d/` la sesión se resuelve pero no se exige:
+sirve a cualquiera si el drop es público, y solo a quien corresponda si es
+privado.
 
-- **El admin** usa una cookie `HttpOnly` de sesión. Se renderiza en el servidor,
-  así que nada en la página necesita leer el token — y una vulnerabilidad de XSS
-  tampoco puede.
-- **La API** usa `Authorization: Bearer <token>`, firmado con **RS256**. Nunca
-  hay secretos compartidos: la clave que firma no es la que verifica. Genera el
-  par con `make keys`; sin él el proceso no arranca, en vez de degradarse en
-  silencio a algo más débil. En una plataforma sin filesystem donde escribir
-  (solo variables de entorno), pon el PEM directamente en `PRIVATE_KEY_JWT` /
-  `PUBLIC_KEY_JWT` en vez de `JWT_PRIVATE_KEY_PATH` / `JWT_PUBLIC_KEY_PATH`;
-  si el campo no admite saltos de línea reales, escríbelos como `\n` literal.
+- **La API** (y por tanto el panel, que la llama desde su propio servidor) usa
+  `Authorization: Bearer <token>`, firmado con **RS256**. Nunca hay secretos
+  compartidos: la clave que firma no es la que verifica. Genera el par con
+  `make keys`; sin él el proceso no arranca, en vez de degradarse en silencio a
+  algo más débil. En una plataforma sin filesystem donde escribir (solo
+  variables de entorno), pon el PEM directamente en `PRIVATE_KEY_JWT` /
+  `PUBLIC_KEY_JWT` en vez de `JWT_PRIVATE_KEY_PATH` / `JWT_PUBLIC_KEY_PATH`; si
+  el campo no admite saltos de línea reales, escríbelos como `\n` literal.
+- El panel guarda el refresh token en **su propia** cookie `HttpOnly`, en su
+  propio origen — no en el de la API. Un access token se pide de nuevo cuando
+  hace falta; el navegador nunca ve ninguno de los dos.
 - **No hay registro abierto.** Las cuentas nacen del administrador inicial o de
   una invitación de un solo uso, con caducidad. No se envía ningún correo: el
   enlace se muestra una vez y lo repartes tú. Solo se guarda su hash, así que un
@@ -171,41 +194,42 @@ es público, y solo a quien corresponda si es privado.
 - Las contraseñas se guardan con **Argon2id**, y entrar o refrescar están
   limitados por intentos.
 
-La primera vez que se arranca sin ninguna cuenta, todo excepto `/setup` (y el
-healthcheck) redirige ahí: es el único momento en que una instancia vacía deja
-hacer algo. Ese formulario crea la organización y el administrador a la vez, y
-te deja ya identificado. Con `ADMIN_EMAIL` **y** `ADMIN_PASSWORD` puestos, ese
-paso se salta y el administrador se crea solo al arrancar en su lugar — pensado
-para Docker o CI, no para abrir en un navegador. Si ya existe un administrador,
-ninguna de las dos vías lo toca — ni su contraseña.
-
-> Pon `AUTH_COOKIE_SECURE=true` en cuanto esto no sea `localhost`, o el
-> navegador enviará la cookie de sesión por HTTP en claro.
+La primera vez que se arranca sin ninguna cuenta, todo excepto
+`/v1/setup*` (y el healthcheck) responde `503 setup_required`: es el único
+momento en que una instancia vacía deja hacer algo. El asistente de primer
+arranque (en el panel) crea la organización y el administrador a la vez, y te
+deja ya identificado. Con `ADMIN_EMAIL` **y** `ADMIN_PASSWORD` puestos, ese
+paso se salta y el administrador se crea solo al arrancar en su lugar —
+pensado para Docker o CI, no para abrir en un navegador. Si ya existe un
+administrador, ninguna de las dos vías lo toca — ni su contraseña.
 
 ## Endpoints
 
+Todo lo que sirve la API vive bajo `/v1` (JSON) o `/d` (drops publicados); el
+panel en `web/` es quien traduce esto a pantallas.
+
 ```
-GET    /                            panel de administración (tu unidad)
-GET    /?owner=<id>&path=           una carpeta o drop de otra unidad
-GET    /compartido                  lo que otros han compartido contigo
-GET    /setup                       asistente de primer arranque (público; solo hasta que exista un admin)
-GET    /login                       entrar (público)
-GET    /invitacion?token=           aceptar una invitación (público)
-GET    /admin/edit?path=&name=      editor de un archivo del drop
-GET    /admin/usuarios              cuentas e invitaciones (solo admin)
-POST   /admin/share                compartir  {owner, path, user_id, access}
-POST   /admin/unshare               revocar    {owner, path, user_id}
-POST   /admin/…                     acciones del panel (formularios; redirigen)
 GET    /healthz
 GET    /d/{slug}/                   abrir un drop publicado (su entrypoint)
 GET    /d/{slug}/{ruta}             un archivo concreto del drop
 GET    /d/{slug}/@{n}/{ruta}        lo mismo, anclado a la versión n
-POST   /v1/drops/upload             publicar un drop; si ya existe, nueva versión
+
+POST   /v1/auth/login               credenciales -> tokens   {email, password}
+POST   /v1/auth/refresh             renovar el access token  {refresh_token}
+POST   /v1/auth/logout              revocar la sesión        {refresh_token}
+GET    /v1/auth/me                  quién eres
+
+GET    /v1/setup/status             ¿hace falta configurar la instancia?      (público)
+POST   /v1/setup                    crear organización + admin, y entrar      (público) {org_name, name?, email, password, password_confirm}
+GET    /v1/invitations/by-token?token=   vista previa de una invitación       (público)
+POST   /v1/invitations/accept       aceptar invitación (no abre sesión)       (público) {token, name?, password, password_confirm}
+
 GET    /v1/nodes?path=              listar hijos de una carpeta de tu unidad
 POST   /v1/nodes                    crear carpeta          {parent, name}
 DELETE /v1/nodes?path=              borrar carpeta o drop (recursivo)
 GET    /v1/drops?path=              metadata + archivos + historial de un drop
 POST   /v1/drops                    crear drop             {parent, name, title, visibility, entrypoint}
+POST   /v1/drops/upload             publicar un drop; si ya existe, nueva versión
 PATCH  /v1/drops?path=              editar metadata        {title?, visibility?, entrypoint?}
 GET    /v1/drops/versions?path=     historial de versiones
 POST   /v1/drops/versions/activate?path=   volver a publicar una versión  {seq}
@@ -213,10 +237,11 @@ GET    /v1/files?path=              descargar/ver un archivo
 POST   /v1/files?path=              subir archivo(s) (multipart, campo "file")
 DELETE /v1/files?path=              borrar un archivo
 
-POST   /v1/auth/login               credenciales -> tokens   {email, password}
-POST   /v1/auth/refresh             renovar el access token  {refresh_token}
-POST   /v1/auth/logout              revocar la sesión        {refresh_token}
-GET    /v1/auth/me                  quién eres
+GET    /v1/shares?path=             quién tiene acceso a un nodo, y a quién más se le podría dar
+POST   /v1/shares?path=             compartir  {user_id, access}   — access: viewer | editor
+DELETE /v1/shares?path=&user_id=    revocar acceso
+GET    /v1/shared                   lo que otros han compartido contigo
+
 GET    /v1/users                    listar cuentas                 (solo admin)
 PATCH  /v1/users/{id}/active        activar o desactivar           (solo admin)
 DELETE /v1/users/{id}               borrar una cuenta              (solo admin)
@@ -246,21 +271,16 @@ Los errores devuelven `{ "code": "...", "message": "..." }`; `code` es el
 contrato estable para clientes (por ejemplo `is_drop`, que distingue un drop de
 una carpeta).
 
-Las rutas bajo `/admin` son formularios HTML: reciben `application/x-www-form-urlencoded`
-(o `multipart/form-data` al subir) y responden `303 See Other` hacia el
-explorador, con el resultado en una cookie de un solo uso. Son la interfaz del
-panel, no una API; para automatizar, usa `/v1`.
-
 ## Configuración
 
-La API lee [`api/.env`](api/.env).
+La API lee [`api/.env`](api/.env); el frontend lee [`web/.env.local`](web/.env.example).
 
 | Variable | Por defecto | Descripción |
 |---|---|---|
 | `DROP_HTTP_ADDR` | `:8000` | Dirección de escucha |
 | `DROP_DATABASE_DSN` | `drop.db` | Base SQLite |
 | `DROP_PUBLIC_BASE_URL` | `http://localhost:8000` | Origen desde el que se sirven los drops; es la URL que devuelve la API |
-| `DROP_CORS_ORIGINS` | *(vacío)* | Orígenes permitidos, separados por coma. El admin es del mismo origen, así que solo hace falta para clientes externos |
+| `DROP_CORS_ORIGINS` | *(vacío)* | Orígenes permitidos, separados por coma — el del frontend (`http://localhost:3000` en desarrollo), para cuando un navegador llame a la API directamente en vez de a través del servidor de Next |
 | `DROP_S3_ENDPOINT` | `localhost:9000` | Endpoint de MinIO |
 | `DROP_S3_ACCESS_KEY` / `DROP_S3_SECRET_KEY` | `dropadmin` / `dropadmin123` | Credenciales |
 | `DROP_S3_BUCKET` | `drop-content` | Bucket de contenido |
@@ -271,10 +291,14 @@ La API lee [`api/.env`](api/.env).
 | `PRIVATE_KEY_JWT` / `PUBLIC_KEY_JWT` | *(vacío)* | El mismo par, pero como PEM en la propia variable en vez de una ruta. Si se ponen **las dos**, tienen prioridad sobre `JWT_*_KEY_PATH` |
 | `JWT_ISSUER` | `drop` | Emisor que llevan los tokens |
 | `ACCESS_TOKEN_TTL` | `15m` | Caducidad del access token |
-| `REFRESH_TOKEN_TTL` | `720h` | Caducidad del refresh token y de la sesión del navegador |
+| `REFRESH_TOKEN_TTL` | `720h` | Caducidad del refresh token y de la sesión del panel |
 | `INVITATION_TTL` | `72h` | Cuánto sirve un enlace de invitación |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | *(vacío)* | Si se ponen **las dos**, crean el administrador al arrancar sin pasar por `/setup`. Deja ambas vacías para el asistente interactivo |
-| `AUTH_COOKIE_SECURE` | `false` | Marca la cookie de sesión como `Secure`; ponlo en `true` fuera de localhost |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | *(vacío)* | Si se ponen **las dos**, crean el administrador al arrancar sin pasar por el asistente. Deja ambas vacías para el asistente interactivo |
 
 Ninguna caducidad está fijada en el código: todas salen de aquí, así que la
 ventana de un token robado se cambia sin recompilar.
+
+`web/.env.local` (o `web/.env.example` como plantilla) solo necesita
+`DROP_API_URL`, el origen de la API tal como lo alcanza **el servidor** de
+Next — `http://localhost:8000` en desarrollo, `http://api:8000` dentro de
+`docker compose --profile full`.
