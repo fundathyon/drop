@@ -11,6 +11,7 @@ jobs:
   build-api:
     uses: ./.github/workflows/_build.yaml
     with:
+      environment: production
       image_name: drop-api
       dockerfile: api/Dockerfile
       context: api
@@ -20,6 +21,7 @@ jobs:
   build-web:
     uses: ./.github/workflows/_build.yaml
     with:
+      environment: production
       image_name: drop-web
       dockerfile: web/Dockerfile
       context: web

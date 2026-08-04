@@ -3,6 +3,10 @@ name: Build and Push Docker Image
 on:
   workflow_call:
     inputs:
+      environment:
+        description: 'GitHub Environment to pull vars/secrets from (e.g. production)'
+        required: true
+        type: string
       image_name:
         description: 'Image name appended to REGISTRY_NAME (e.g. drop-api, drop-web)'
         required: true
@@ -23,6 +27,7 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
     env:
       REGISTRY_URL: ${{ vars.REGISTRY_URL }}
       REGISTRY_NAME: ${{ vars.REGISTRY_NAME }}
