@@ -1,0 +1,15 @@
+{
+  "common": {
+    "appName": "Drop",
+    "adminSuffix": "admin",
+    "tagline": "A Drive for publishing folders as static websites.",
+    "cancel": "Cancel",
+    "close": "Close",
+    "create": "Create",
+    "save": "Save",
+    "saving": "Saving…",
+    "delete": "Delete",
+    "deleting": "Deleting…",
+    "unexpectedError": "Unexpected error"
+  }
+}

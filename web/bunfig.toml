@@ -1,0 +1,9 @@
+[test]
+preload = ["./happydom.ts", "./testing/setup.ts"]
+coverageThreshold = 0.9
+coverageSkipTestFiles = true
+# Vendored shadcn/ui primitives (copied in verbatim by the shadcn CLI, not
+# code this project authored) are excluded from the per-file threshold —
+# exhaustively testing Radix's own internals isn't this project's job. They
+# still appear, uncounted against the gate, if you run with --coverage.
+coveragePathIgnorePatterns = ["src/components/ui/**"]

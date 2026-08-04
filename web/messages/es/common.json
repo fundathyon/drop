@@ -1,0 +1,15 @@
+{
+  "common": {
+    "appName": "Drop",
+    "adminSuffix": "admin",
+    "tagline": "Un Drive para publicar carpetas como sitios web estáticos.",
+    "cancel": "Cancelar",
+    "close": "Cerrar",
+    "create": "Crear",
+    "save": "Guardar",
+    "saving": "Guardando…",
+    "delete": "Eliminar",
+    "deleting": "Eliminando…",
+    "unexpectedError": "Error inesperado"
+  }
+}

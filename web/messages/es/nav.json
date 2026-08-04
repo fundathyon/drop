@@ -1,0 +1,16 @@
+{
+  "nav": {
+    "unitsAriaLabel": "Unidades",
+    "myDrive": "Mi unidad",
+    "sharedWithMe": "Compartido conmigo",
+    "home": "Inicio",
+    "routeAriaLabel": "Ruta",
+    "themeToggleAriaLabel": "Cambiar tema",
+    "accountButtonAriaLabel": "Cuenta de {email}",
+    "accountRoleLabel": "{email} · {role}",
+    "manageUsers": "Usuarios e invitaciones",
+    "signOut": "Cerrar sesión",
+    "roleAdmin": "admin",
+    "roleUser": "user"
+  }
+}
