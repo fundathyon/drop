@@ -1,0 +1,59 @@
+name: Build and Push Docker Image
+
+on:
+  workflow_call:
+    inputs:
+      image_name:
+        description: 'Image name appended to REGISTRY_NAME (e.g. drop-api, drop-web)'
+        required: true
+        type: string
+      dockerfile:
+        description: 'Path to the Dockerfile'
+        required: true
+        type: string
+      context:
+        description: 'Docker build context'
+        required: true
+        type: string
+    outputs:
+      commit_sha:
+        description: 'Short commit SHA used as the image tag'
+        value: ${{ jobs.build-and-push.outputs.commit_sha }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    env:
+      REGISTRY_URL: ${{ vars.REGISTRY_URL }}
+      REGISTRY_NAME: ${{ vars.REGISTRY_NAME }}
+      REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+      REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+
+    steps:
+      - name: 🧾 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🏷️ Resolve commit SHA
+        id: meta
+        run: echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: 🔐 Docker login
+        run: echo "${REGISTRY_PASSWORD}" | docker login "${REGISTRY_URL}" -u "${REGISTRY_USERNAME}" --password-stdin
+
+      - name: 🛠️ Build and push image
+        run: |
+          IMAGE="${REGISTRY_URL}/${REGISTRY_NAME}/${{ inputs.image_name }}"
+          SHA="${{ steps.meta.outputs.sha }}"
+
+          echo "🚧 Building image: $IMAGE"
+          docker build -f "${{ inputs.dockerfile }}" \
+            -t "$IMAGE:latest" \
+            -t "$IMAGE:${SHA}" \
+            "${{ inputs.context }}"
+
+          echo "📤 Pushing tags..."
+          docker push "$IMAGE:latest"
+          docker push "$IMAGE:${SHA}"
+
+    outputs:
+      commit_sha: ${{ steps.meta.outputs.sha }}

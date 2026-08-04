@@ -1,0 +1,26 @@
+name: Main Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+jobs:
+  # 🛠️ Build and push the API image
+  build-api:
+    uses: ./.github/workflows/_build.yaml
+    with:
+      image_name: drop-api
+      dockerfile: api/Dockerfile
+      context: api
+    secrets: inherit
+
+  # 🛠️ Build and push the frontend image
+  build-web:
+    uses: ./.github/workflows/_build.yaml
+    with:
+      image_name: drop-web
+      dockerfile: web/Dockerfile
+      context: web
+    secrets: inherit
