@@ -5,7 +5,7 @@ CERTS_DIR := $(API_DIR)/certs
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev dev-web up down up-all down-all logs seed keys api build build-web run swagger test test-web clean
+.PHONY: help dev dev-web up down up-all down-all logs seed keys api build build-web run swagger test test-web clean reset
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -70,3 +70,8 @@ test-web: ## Typecheck, lint and test the admin frontend
 clean: ## Remove build output, the local database, and MinIO volumes
 	rm -f $(API_DIR)/dropd $(API_DIR)/drop.db
 	docker compose down -v
+
+reset: ## Wipe the database and object storage — the next run starts from the setup wizard, as if configured for the first time
+	rm -f $(API_DIR)/drop.db
+	docker compose --profile full down -v --remove-orphans
+	@echo "Wiped. Run 'make dev' (or 'make up-all') to start over from /setup."
