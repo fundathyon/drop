@@ -1,0 +1,41 @@
+{
+  "explorer": {
+    "viewModeAriaLabel": "Modo de vista",
+    "gridView": "Vista de cuadrícula",
+    "listView": "Vista de lista",
+    "newFolder": "Nueva carpeta",
+    "newDrop": "Nuevo drop",
+    "empty": "Esta carpeta está vacía.",
+    "nameHeader": "Nombre",
+    "typeHeader": "Tipo",
+    "dropBadge": "drop",
+    "folderBadge": "carpeta",
+    "deleteAriaLabel": "Eliminar {name}",
+    "newFolderDialog": {
+      "title": "Nueva carpeta",
+      "description": "Una carpeta organiza otras carpetas y drops. No guarda archivos.",
+      "nameLabel": "Nombre",
+      "namePlaceholder": "Proyectos"
+    },
+    "newDropDialog": {
+      "title": "Nuevo drop",
+      "description": "Un drop es la unidad publicable: lleva metadata propia y contiene archivos.",
+      "nameLabel": "Nombre de carpeta",
+      "namePlaceholder": "arquitectura",
+      "titleLabel": "Título",
+      "titlePlaceholder": "(igual al nombre si se deja vacío)",
+      "visibilityLabel": "Visibilidad",
+      "visibilityPublic": "public",
+      "visibilityUnlisted": "unlisted",
+      "visibilityPrivate": "private",
+      "entrypointLabel": "Entrypoint",
+      "entrypointPlaceholder": "index.html",
+      "filesLabel": "Archivos",
+      "dropzoneInstructions": "Arrastra tus archivos aquí, o haz clic para elegirlos",
+      "removeFileAriaLabel": "Quitar {name}"
+    },
+    "deleteDropTitle": "¿Eliminar este drop?",
+    "deleteFolderTitle": "¿Eliminar esta carpeta?",
+    "deleteText": "Se eliminará \"{name}\" y todo su contenido. Esta acción no se puede deshacer."
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "drop": {
+    "title": "Archivos",
+    "openTitleLocked": "Ábrelo: responde a tu cuenta, no a la de un desconocido",
+    "openTitleExternal": "Abrir el drop publicado",
+    "copyAriaLabel": "Copiar URL",
+    "copiedAriaLabel": "URL copiada",
+    "notices": {
+      "privateLine1": "Este drop es <b>privado</b>: su URL abre para tu cuenta y para quien lo tengas compartido, y responde 404 a cualquier otra persona, tenga el enlace o no.",
+      "privateLine2Owner": "Para que lo abra cualquiera que reciba el enlace, cámbialo a <code>unlisted</code> desde <b>Metadata</b>; con <code>public</code> además queda a la vista.",
+      "privateLine2Other": "Solo quien pueda editarlo puede abrirlo al resto.",
+      "sharedLine1": "Este drop está en la unidad de otra persona y lo ves porque te lo han compartido como <b>{access}</b>.",
+      "sharedAccessEditor": "editor",
+      "sharedAccessViewer": "lector",
+      "sharedLine2Editor": "Puedes cambiar su contenido, pero no eliminarlo.",
+      "sharedLine2Viewer": "Solo puedes abrirlo y descargarlo.",
+      "entrypointMissing": "Este drop abre <code>{entrypoint}</code>, y no hay ningún archivo con ese nombre: su URL responde 404. Sube esa página, o cambia el entrypoint desde <b>Metadata</b> al archivo que quieras servir."
+    },
+    "empty": "Sin archivos todavía.",
+    "files": {
+      "nameHeader": "Nombre",
+      "typeHeader": "Tipo",
+      "sizeHeader": "Tamaño",
+      "modifiedHeader": "Modificado",
+      "generatedTitle": "mantenido por la API",
+      "downloadAriaLabel": "Descargar {name}",
+      "deleteAriaLabel": "Eliminar {name}",
+      "deleteTitle": "¿Eliminar archivo?",
+      "deleteDescription": "Se eliminará \"{name}\" de este drop. Esta acción no se puede deshacer."
+    },
+    "versions": {
+      "subtitle": "Historial de versiones",
+      "current": "actual",
+      "filesCount": "{count, plural, one {# archivo} other {# archivos}}",
+      "view": "Ver",
+      "viewAriaLabel": "Ver la versión {seq}",
+      "restore": "Restaurar",
+      "restoreTitle": "¿Volver a publicar la versión {seq}?",
+      "restoreDescription": "La URL del drop pasará a servir la versión {seq}. No se borra nada: la versión actual seguirá en el historial."
+    },
+    "deleteDrop": {
+      "trigger": "Eliminar drop",
+      "title": "¿Eliminar este drop?",
+      "description": "Se eliminarán el drop y todos sus archivos. Esta acción no se puede deshacer."
+    },
+    "editMeta": {
+      "trigger": "Metadata",
+      "title": "Metadata del drop",
+      "description": "Se guarda en el archivo <code>.drop</code> junto a los archivos del drop.",
+      "titleLabel": "Título",
+      "visibilityLabel": "Visibilidad",
+      "visibilityPrivate": "private",
+      "visibilityUnlisted": "unlisted",
+      "visibilityPublic": "public",
+      "entrypointLabel": "Entrypoint",
+      "slugLabel": "Slug",
+      "createdLabel": "Creado",
+      "updatedLabel": "Actualizado",
+      "error": {
+        "unexpected": "Error inesperado"
+      }
+    },
+    "upload": {
+      "trigger": "Subir archivo",
+      "title": "Subir archivos",
+      "description": "Un archivo con el mismo nombre reemplaza al que ya está en el drop.",
+      "fileLabel": "Archivos",
+      "error": {
+        "noFile": "Selecciona al menos un archivo.",
+        "unexpected": "Error inesperado"
+      }
+    },
+    "share": {
+      "trigger": "Compartir",
+      "title": "Compartir \"{title}\"",
+      "description": "Quien reciba el acceso lo verá en su sección <b>Compartido conmigo</b>. Compartir un drop no cambia su visibilidad pública.",
+      "empty": "Todavía no lo has compartido con nadie.",
+      "accessEditor": "editor",
+      "accessViewer": "lector",
+      "removeAriaLabel": "Quitar acceso a {email}",
+      "personLabel": "Persona",
+      "personPlaceholder": "Elige una cuenta…",
+      "accessLabel": "Acceso",
+      "accessViewerOption": "lector — abrir y descargar",
+      "accessEditorOption": "editor — además subir, editar y borrar dentro",
+      "submit": "Compartir",
+      "sharing": "Compartiendo…",
+      "error": {
+        "userRequired": "Elige una cuenta para compartir.",
+        "unexpected": "Error inesperado"
+      }
+    }
+  }
+}

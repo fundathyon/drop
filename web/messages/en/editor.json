@@ -1,0 +1,12 @@
+{
+  "editor": {
+    "backToDrop": "Back to drop",
+    "download": "Download",
+    "generatedNotice": "This file is kept up to date by the API: it's regenerated on every change to the drop.",
+    "notFound": "That file wasn't found in this drop.",
+    "unsupportedNotice": "This file type can't be edited here.",
+    "error": {
+      "unexpected": "Unexpected error"
+    }
+  }
+}

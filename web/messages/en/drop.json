@@ -1,0 +1,94 @@
+{
+  "drop": {
+    "title": "Files",
+    "openTitleLocked": "Open it: this answers to your account, not a stranger's",
+    "openTitleExternal": "Open the published drop",
+    "copyAriaLabel": "Copy URL",
+    "copiedAriaLabel": "URL copied",
+    "notices": {
+      "privateLine1": "This drop is <b>private</b>: its URL opens for your account and anyone you've shared it with, and answers 404 to anyone else, link or no link.",
+      "privateLine2Owner": "To let anyone with the link open it, switch it to <code>unlisted</code> from <b>Metadata</b>; <code>public</code> also lists it.",
+      "privateLine2Other": "Only someone who can edit it can open it up to others.",
+      "sharedLine1": "This drop lives in someone else's drive, and you're seeing it because it was shared with you as an <b>{access}</b>.",
+      "sharedAccessEditor": "editor",
+      "sharedAccessViewer": "viewer",
+      "sharedLine2Editor": "You can change its contents, but not delete it.",
+      "sharedLine2Viewer": "You can only open and download it.",
+      "entrypointMissing": "This drop opens <code>{entrypoint}</code>, and no file with that name exists: its URL answers 404. Upload that page, or change the entrypoint from <b>Metadata</b> to whichever file you want served."
+    },
+    "empty": "No files yet.",
+    "files": {
+      "nameHeader": "Name",
+      "typeHeader": "Type",
+      "sizeHeader": "Size",
+      "modifiedHeader": "Modified",
+      "generatedTitle": "kept up to date by the API",
+      "downloadAriaLabel": "Download {name}",
+      "deleteAriaLabel": "Delete {name}",
+      "deleteTitle": "Delete this file?",
+      "deleteDescription": "\"{name}\" will be removed from this drop. This cannot be undone."
+    },
+    "versions": {
+      "subtitle": "Version history",
+      "current": "current",
+      "filesCount": "{count, plural, one {# file} other {# files}}",
+      "view": "View",
+      "viewAriaLabel": "View version {seq}",
+      "restore": "Restore",
+      "restoreTitle": "Publish version {seq} again?",
+      "restoreDescription": "The drop's URL will start serving version {seq} again. Nothing is deleted: the current version stays in the history."
+    },
+    "deleteDrop": {
+      "trigger": "Delete drop",
+      "title": "Delete this drop?",
+      "description": "The drop and all its files will be deleted. This cannot be undone."
+    },
+    "editMeta": {
+      "trigger": "Metadata",
+      "title": "Drop metadata",
+      "description": "Saved to the <code>.drop</code> file alongside the drop's files.",
+      "titleLabel": "Title",
+      "visibilityLabel": "Visibility",
+      "visibilityPrivate": "private",
+      "visibilityUnlisted": "unlisted",
+      "visibilityPublic": "public",
+      "entrypointLabel": "Entrypoint",
+      "slugLabel": "Slug",
+      "createdLabel": "Created",
+      "updatedLabel": "Updated",
+      "error": {
+        "unexpected": "Unexpected error"
+      }
+    },
+    "upload": {
+      "trigger": "Upload file",
+      "title": "Upload files",
+      "description": "A file with the same name replaces the one already in the drop.",
+      "fileLabel": "Files",
+      "error": {
+        "noFile": "Choose at least one file.",
+        "unexpected": "Unexpected error"
+      }
+    },
+    "share": {
+      "trigger": "Share",
+      "title": "Share \"{title}\"",
+      "description": "Whoever gets access will see it in their <b>Shared with me</b> section. Sharing a drop doesn't change its public visibility.",
+      "empty": "You haven't shared this with anyone yet.",
+      "accessEditor": "editor",
+      "accessViewer": "viewer",
+      "removeAriaLabel": "Remove access for {email}",
+      "personLabel": "Person",
+      "personPlaceholder": "Choose an account…",
+      "accessLabel": "Access",
+      "accessViewerOption": "viewer — open and download",
+      "accessEditorOption": "editor — also upload, edit and delete inside",
+      "submit": "Share",
+      "sharing": "Sharing…",
+      "error": {
+        "userRequired": "Choose an account to share with.",
+        "unexpected": "Unexpected error"
+      }
+    }
+  }
+}

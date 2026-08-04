@@ -1,0 +1,41 @@
+{
+  "explorer": {
+    "viewModeAriaLabel": "View mode",
+    "gridView": "Grid view",
+    "listView": "List view",
+    "newFolder": "New folder",
+    "newDrop": "New drop",
+    "empty": "This folder is empty.",
+    "nameHeader": "Name",
+    "typeHeader": "Type",
+    "dropBadge": "drop",
+    "folderBadge": "folder",
+    "deleteAriaLabel": "Delete {name}",
+    "newFolderDialog": {
+      "title": "New folder",
+      "description": "A folder organizes other folders and drops. It holds no files.",
+      "nameLabel": "Name",
+      "namePlaceholder": "Projects"
+    },
+    "newDropDialog": {
+      "title": "New drop",
+      "description": "A drop is the publishable unit: it carries its own metadata and holds files.",
+      "nameLabel": "Folder name",
+      "namePlaceholder": "architecture",
+      "titleLabel": "Title",
+      "titlePlaceholder": "(same as the name if left empty)",
+      "visibilityLabel": "Visibility",
+      "visibilityPublic": "public",
+      "visibilityUnlisted": "unlisted",
+      "visibilityPrivate": "private",
+      "entrypointLabel": "Entrypoint",
+      "entrypointPlaceholder": "index.html",
+      "filesLabel": "Files",
+      "dropzoneInstructions": "Drag your files here, or click to browse",
+      "removeFileAriaLabel": "Remove {name}"
+    },
+    "deleteDropTitle": "Delete this drop?",
+    "deleteFolderTitle": "Delete this folder?",
+    "deleteText": "\"{name}\" and everything in it will be deleted. This cannot be undone."
+  }
+}
