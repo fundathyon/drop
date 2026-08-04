@@ -6,7 +6,6 @@ import (
 	"crypto/rsa"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -53,7 +52,7 @@ func newAuthedRouter(t *testing.T) (http.Handler, *auth.Service) {
 
 // newSetupRouter builds the real router around a fresh, never-bootstrapped
 // account store — the state a brand new instance starts in. Unlike
-// newAuthedRouter, it needs a real drop service: a successful POST /setup
+// newAuthedRouter, it needs a real drop service: a successful POST /v1/setup
 // calls through to it to adopt any pre-ownership nodes.
 func newSetupRouter(t *testing.T) (http.Handler, *auth.Service) {
 	t.Helper()
@@ -80,8 +79,8 @@ func newSetupRouter(t *testing.T) (http.Handler, *auth.Service) {
 }
 
 // TestUnauthenticatedPerimeter pins down what a stranger can reach. It is the
-// test worth having: every other guarantee in the admin rests on the answer to
-// "which routes need a session", and a wrong answer there is silent.
+// test worth having: every other guarantee in the API rests on the answer to
+// "which routes need a token", and a wrong answer there is silent.
 func TestUnauthenticatedPerimeter(t *testing.T) {
 	router, _ := newAuthedRouter(t)
 
@@ -91,27 +90,19 @@ func TestUnauthenticatedPerimeter(t *testing.T) {
 		path   string
 		want   int
 	}{
-		// Public: the product, and the two ways in.
+		// Public, no token needed at all.
 		{"liveness stays open", http.MethodGet, "/healthz", http.StatusOK},
-		{"the login form is reachable", http.MethodGet, "/login", http.StatusOK},
-		{"an invitation link is reachable", http.MethodGet, "/invitacion?token=x", http.StatusGone},
-		{"setup redirects once there is an administrator", http.MethodGet, "/setup", http.StatusSeeOther},
-		{"the stylesheet renders the login form", http.MethodGet, "/admin/static/admin.css", http.StatusOK},
-
-		// The admin: a browser is redirected, not refused, so it lands on a
-		// form rather than a JSON error it cannot act on.
-		{"the explorer needs a session", http.MethodGet, "/", http.StatusSeeOther},
-		{"the editor needs a session", http.MethodGet, "/admin/edit?path=a&name=b", http.StatusSeeOther},
-		{"account management needs a session", http.MethodGet, "/admin/usuarios", http.StatusSeeOther},
-		{"writes need a session", http.MethodPost, "/admin/folders", http.StatusSeeOther},
-		{"deletes need a session", http.MethodPost, "/admin/nodes/delete", http.StatusSeeOther},
-		{"the API docs need a session", http.MethodGet, "/docs", http.StatusSeeOther},
+		{"setup status is public", http.MethodGet, "/v1/setup/status", http.StatusOK},
+		{"an invitation preview is public", http.MethodGet, "/v1/invitations/by-token?token=x", http.StatusGone},
+		{"the docs redirect without a token", http.MethodGet, "/docs", http.StatusMovedPermanently},
 
 		// The API: a client gets a status it can branch on.
 		{"listing needs a token", http.MethodGet, "/v1/nodes?path=", http.StatusUnauthorized},
 		{"reading a drop needs a token", http.MethodGet, "/v1/drops?path=a", http.StatusUnauthorized},
 		{"uploading needs a token", http.MethodPost, "/v1/drops/upload", http.StatusUnauthorized},
 		{"downloading needs a token", http.MethodGet, "/v1/files?path=a", http.StatusUnauthorized},
+		{"listing shares needs a token", http.MethodGet, "/v1/shares?path=a", http.StatusUnauthorized},
+		{"listing shared-with-me needs a token", http.MethodGet, "/v1/shared", http.StatusUnauthorized},
 		{"listing users needs a token", http.MethodGet, "/v1/users", http.StatusUnauthorized},
 		{"inviting needs a token", http.MethodPost, "/v1/invitations", http.StatusUnauthorized},
 		{"describing yourself needs a token", http.MethodGet, "/v1/auth/me", http.StatusUnauthorized},
@@ -142,22 +133,18 @@ func TestSetupGate(t *testing.T) {
 		want   int
 	}{
 		// Open regardless: a liveness probe must not fail before anyone has
-		// had a chance to reach the wizard, and the wizard needs its own
-		// stylesheet to render at all.
+		// had a chance to reach the wizard, and the wizard needs to know
+		// whether it should even offer itself.
 		{"liveness stays open", http.MethodGet, "/healthz", http.StatusOK},
-		{"the setup wizard is reachable", http.MethodGet, "/setup", http.StatusOK},
-		{"its stylesheet is reachable", http.MethodGet, "/admin/static/admin.css", http.StatusOK},
+		{"setup status is reachable", http.MethodGet, "/v1/setup/status", http.StatusOK},
+		{"setup itself is reachable (even a bad body reaches the handler)",
+			http.MethodPost, "/v1/setup", http.StatusBadRequest},
 
-		// A browser is sent to the wizard, the same way it would be sent to
-		// the login form once an administrator exists.
-		{"login redirects to setup", http.MethodGet, "/login", http.StatusSeeOther},
-		{"the explorer redirects to setup", http.MethodGet, "/", http.StatusSeeOther},
-		{"the docs redirect to setup", http.MethodGet, "/docs", http.StatusSeeOther},
-
-		// A JSON client gets a status it can branch on, same principle as the
-		// 401s in TestUnauthenticatedPerimeter.
-		{"the API answers setup_required", http.MethodGet, "/v1/nodes?path=", http.StatusServiceUnavailable},
+		// Everything else answers a status a JSON client can branch on,
+		// rather than a page there is no longer anyone to render.
+		{"listing answers setup_required", http.MethodGet, "/v1/nodes?path=", http.StatusServiceUnavailable},
 		{"auth/me answers setup_required", http.MethodGet, "/v1/auth/me", http.StatusServiceUnavailable},
+		{"an unknown path answers setup_required too", http.MethodGet, "/anything", http.StatusServiceUnavailable},
 	}
 
 	for _, tc := range cases {
@@ -172,126 +159,15 @@ func TestSetupGate(t *testing.T) {
 	}
 }
 
-// TestSetupInstanceOverHTTP walks the whole first-run flow through the real
-// router: submitting the wizard signs the new administrator in, and the
-// wizard and the login form then point at each other the other way around.
-func TestSetupInstanceOverHTTP(t *testing.T) {
-	router, _ := newSetupRouter(t)
-
-	form := url.Values{
-		"org_name":         {"Acme"},
-		"name":             {"Admin"},
-		"email":            {"admin@drop.test"},
-		"password":         {"a-strong-password"},
-		"password_confirm": {"a-strong-password"},
-	}
-	req := httptest.NewRequest(http.MethodPost, "/setup", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("POST /setup: expected 303, got %d (%s)", rec.Code, rec.Body)
-	}
-	if got := rec.Header().Get("Location"); got != "/" {
-		t.Fatalf("expected a redirect to /, got %q", got)
-	}
-	var cookie *http.Cookie
-	for _, c := range rec.Result().Cookies() {
-		if c.Name == sessionCookie {
-			cookie = c
-		}
-	}
-	if cookie == nil || cookie.Value == "" {
-		t.Fatal("expected a session cookie after setup")
-	}
-
-	rec = httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/setup", nil))
-	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/login" {
-		t.Fatalf("expected /setup to redirect to /login once set up, got %d %q",
-			rec.Code, rec.Header().Get("Location"))
-	}
-
-	rec = httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/login", nil))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected /login reachable once set up, got %d", rec.Code)
-	}
-}
-
-// TestSetupInstanceRefusesASecondSubmission checks the once-only guard over
-// HTTP: a second visitor (or a second tab) finishing the form after someone
-// else already has is sent to sign in, not shown an error they cannot act on.
-func TestSetupInstanceRefusesASecondSubmission(t *testing.T) {
-	router, accounts := newSetupRouter(t)
-	if _, _, err := accounts.SetupInstance(context.Background(), "Acme", "Admin",
-		"admin@drop.test", "a-strong-password", auth.Device{}); err != nil {
-		t.Fatalf("SetupInstance: %v", err)
-	}
-
-	form := url.Values{
-		"org_name":         {"Otra"},
-		"name":             {"Otro"},
-		"email":            {"otro@drop.test"},
-		"password":         {"another-password"},
-		"password_confirm": {"another-password"},
-	}
-	req := httptest.NewRequest(http.MethodPost, "/setup", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/login" {
-		t.Fatalf("expected a redirect to /login, got %d %q", rec.Code, rec.Header().Get("Location"))
-	}
-}
-
-// TestSignedOutRedirectRemembersWhereYouWereGoing checks the detail that makes
-// the redirect worth having at all.
-func TestSignedOutRedirectRemembersWhereYouWereGoing(t *testing.T) {
-	router, _ := newAuthedRouter(t)
-
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/?path=Proyectos", nil))
-
-	got := rec.Header().Get("Location")
-	if want := "/login?next=%2F%3Fpath%3DProyectos"; got != want {
-		t.Fatalf("expected %q, got %q", want, got)
-	}
-}
-
-// TestSafeNextRefusesToLeaveTheSite guards the open redirect. Without it the
-// login form forwards anywhere an attacker names, which is what turns a
-// phishing link into a convincing one.
-func TestSafeNextRefusesToLeaveTheSite(t *testing.T) {
-	cases := map[string]string{
-		"/":                    "/",
-		"/?path=x":             "/?path=x",
-		"/admin/usuarios":      "/admin/usuarios",
-		"":                     "/",
-		"//evil.example.com":   "/",
-		"https://evil.example": "/",
-		"http://evil.example":  "/",
-		"javascript:alert(1)":  "/",
-		"evil.example.com":     "/",
-	}
-	for next, want := range cases {
-		if got := safeNext(next); got != want {
-			t.Errorf("safeNext(%q) = %q, want %q", next, got, want)
-		}
-	}
-}
-
 func TestBearerToken(t *testing.T) {
 	cases := map[string]string{
-		"Bearer abc123": "abc123",
-		"bearer abc123": "abc123",
-		"BEARER abc123": "abc123",
+		"Bearer abc123":  "abc123",
+		"bearer abc123":  "abc123",
+		"BEARER abc123":  "abc123",
 		"Bearer  spaced": "spaced",
-		"Basic abc123":  "",
-		"abc123":        "",
-		"":              "",
+		"Basic abc123":   "",
+		"abc123":         "",
+		"":               "",
 	}
 	for header, want := range cases {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -354,7 +230,7 @@ func testContext(req *http.Request) *gin.Context {
 // TestInvitationLinkIsAbsolute checks the link handed to a recipient is one
 // they can actually open, since nothing emails it for them.
 func TestInvitationLinkIsAbsolute(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/admin/usuarios", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/invitations", nil)
 	req.Host = "drop.example.com"
 	c := testContext(req)
 

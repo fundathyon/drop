@@ -132,7 +132,6 @@ func main() {
 		AllowedOrigins: cfg.CORSOrigins,
 		InjectWidget:   cfg.InjectWidget,
 		Auth:           accounts,
-		CookieSecure:   cfg.Auth.CookieSecure,
 	})
 	if err != nil {
 		slog.Error("build router", "error", err)

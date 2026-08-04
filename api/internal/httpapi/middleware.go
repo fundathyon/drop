@@ -3,7 +3,6 @@ package httpapi
 import (
 	"errors"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -13,11 +12,6 @@ import (
 	"drop/internal/auth"
 	"drop/internal/model"
 )
-
-// sessionCookie holds the refresh token for a browser. It never reaches
-// JavaScript: the admin is rendered on the server, so nothing in the page has
-// any reason to read it, and HttpOnly takes it out of reach of an XSS bug.
-const sessionCookie = "drop_session"
 
 // contextUser is where a resolved account is stashed for the handlers.
 const contextUser = "auth.user"
@@ -33,22 +27,26 @@ func currentUser(c *gin.Context) (auth.UserInfo, bool) {
 	return user, ok
 }
 
-// requireSession gates the admin pages. An unauthenticated request is sent to
-// the login form carrying where it was going, so signing in lands on the page
-// that was asked for rather than dumping everyone at the root.
-func requireSession(svc *auth.Service) gin.HandlerFunc {
+// actorOf is who the request is on behalf of. Zero is impossible on any route
+// that sits behind requireAPIAuth, which every caller of this does.
+func actorOf(c *gin.Context) uint {
+	user, _ := currentUser(c)
+	return user.ID
+}
+
+// requireAPIAuth gates /v1. It takes a bearer access token, which is what a
+// script, a CLI, or the Next.js frontend's server carries.
+func requireAPIAuth(svc *auth.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		token, err := c.Cookie(sessionCookie)
-		if err != nil || token == "" {
-			redirectToLogin(c)
+		token := bearerToken(c)
+		if token == "" {
+			c.Header("WWW-Authenticate", `Bearer realm="drop"`)
+			abortWithError(c, http.StatusUnauthorized, "unauthorized", "authentication required")
 			return
 		}
-		user, err := svc.SessionUser(c.Request.Context(), token)
+		user, err := svc.UserFromAccessToken(c.Request.Context(), token)
 		if err != nil {
-			// The cookie is stale, revoked, or belongs to a disabled account.
-			// Clearing it stops every later request from repeating the lookup.
-			clearSessionCookie(c, false)
-			redirectToLogin(c)
+			abortWithError(c, http.StatusUnauthorized, "unauthorized", "invalid or expired token")
 			return
 		}
 		c.Set(contextUser, user)
@@ -56,54 +54,16 @@ func requireSession(svc *auth.Service) gin.HandlerFunc {
 	}
 }
 
-// requireAPIAuth gates /v1. It takes a bearer access token, which is what a
-// script or CLI carries, and falls back to the admin's session cookie so that
-// links the admin renders — file downloads, the Swagger UI's "try it out" —
-// work in a browser that is already signed in.
-func requireAPIAuth(svc *auth.Service) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if token := bearerToken(c); token != "" {
-			user, err := svc.UserFromAccessToken(c.Request.Context(), token)
-			if err != nil {
-				abortWithError(c, http.StatusUnauthorized, "unauthorized", "invalid or expired token")
-				return
-			}
-			c.Set(contextUser, user)
-			c.Next()
-			return
-		}
-
-		if cookie, err := c.Cookie(sessionCookie); err == nil && cookie != "" {
-			user, err := svc.SessionUser(c.Request.Context(), cookie)
-			if err == nil {
-				c.Set(contextUser, user)
-				c.Next()
-				return
-			}
-		}
-
-		c.Header("WWW-Authenticate", `Bearer realm="drop"`)
-		abortWithError(c, http.StatusUnauthorized, "unauthorized", "authentication required")
-	}
-}
-
 // resolveSession attaches the account behind a request when there is one and
 // lets it through anonymous when there is not. It is for the published routes,
 // where being signed in changes what may be served — a private drop opens for
-// the people it belongs to — but is never required to ask.
-//
-// A credential that does not check out is ignored rather than rejected, and the
-// cookie is left alone: a stale one on a published page is not that page's
-// business to clean up, and clearing it would sign the visitor out of the admin
-// as a side effect of loading somebody's site.
+// the people it belongs to — but is never required to ask. A bearer token that
+// does not check out is ignored rather than rejected: a stale credential on a
+// published page is not that page's business to reject, only to disregard.
 func resolveSession(svc *auth.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if token := bearerToken(c); token != "" {
 			if user, err := svc.UserFromAccessToken(c.Request.Context(), token); err == nil {
-				c.Set(contextUser, user)
-			}
-		} else if cookie, err := c.Cookie(sessionCookie); err == nil && cookie != "" {
-			if user, err := svc.SessionUser(c.Request.Context(), cookie); err == nil {
 				c.Set(contextUser, user)
 			}
 		}
@@ -111,14 +71,14 @@ func resolveSession(svc *auth.Service) gin.HandlerFunc {
 	}
 }
 
-// setupGate holds every route except the setup wizard itself closed until an
-// administrator exists. It runs after cors(): cors() answers an OPTIONS
-// preflight with AbortWithStatus and no c.Next(), so anything registered
-// ahead of it would never see a preflight request at all.
+// setupGate holds every route except the setup endpoints themselves closed
+// until an administrator exists. It runs after cors(): cors() answers an
+// OPTIONS preflight with AbortWithStatus and no c.Next(), so anything
+// registered ahead of it would never see a preflight request at all.
 func setupGate(svc *auth.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
-		if path == "/setup" || path == "/healthz" || strings.HasPrefix(path, "/admin/static/") {
+		if path == "/healthz" || path == "/v1/setup/status" || path == "/v1/setup" {
 			c.Next()
 			return
 		}
@@ -133,12 +93,7 @@ func setupGate(svc *auth.Service) gin.HandlerFunc {
 			return
 		}
 
-		if strings.HasPrefix(path, "/v1/") {
-			abortWithError(c, http.StatusServiceUnavailable, "setup_required", "this instance has not been set up yet")
-			return
-		}
-		c.Redirect(http.StatusSeeOther, "/setup")
-		c.Abort()
+		abortWithError(c, http.StatusServiceUnavailable, "setup_required", "this instance has not been set up yet")
 	}
 }
 
@@ -159,42 +114,6 @@ func bearerToken(c *gin.Context) string {
 		return ""
 	}
 	return strings.TrimSpace(header[7:])
-}
-
-func redirectToLogin(c *gin.Context) {
-	target := "/login"
-	// Only GETs are worth resuming: replaying a POST after a login would repeat
-	// a write the user may no longer intend.
-	if c.Request.Method == http.MethodGet {
-		if next := c.Request.URL.RequestURI(); next != "/" {
-			target += "?next=" + url.QueryEscape(next)
-		}
-	}
-	c.Redirect(http.StatusSeeOther, target)
-	c.Abort()
-}
-
-func setSessionCookie(c *gin.Context, token string, expires time.Time, secure bool) {
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     sessionCookie,
-		Value:    token,
-		Path:     "/",
-		Expires:  expires,
-		MaxAge:   int(time.Until(expires).Seconds()),
-		HttpOnly: true,
-		Secure:   secure,
-		// Lax, not Strict: a link into the admin from anywhere else should land
-		// signed in. It still keeps the cookie off cross-site form posts, which
-		// is the CSRF case that matters here.
-		SameSite: http.SameSiteLaxMode,
-	})
-}
-
-func clearSessionCookie(c *gin.Context, secure bool) {
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name: sessionCookie, Value: "", Path: "/", MaxAge: -1,
-		HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode,
-	})
 }
 
 // ---------- rate limiting ----------

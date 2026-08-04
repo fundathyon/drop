@@ -51,9 +51,6 @@ type Auth struct {
 	// admin is never modified from here either way.
 	AdminEmail    string
 	AdminPassword string
-	// CookieSecure marks the refresh cookie Secure. It defaults to off so
-	// plain-HTTP localhost works, and must be on anywhere else.
-	CookieSecure bool
 }
 
 // S3 points at a MinIO (or any S3-compatible) endpoint holding drop content.
@@ -73,8 +70,9 @@ func Load() Config {
 		DatabaseDSN:   env("DROP_DATABASE_DSN", "drop.db"),
 		PublicBaseURL: strings.TrimSuffix(env("DROP_PUBLIC_BASE_URL", "http://localhost:8000"), "/"),
 		InjectWidget:  envBool("DROP_INJECT_WIDGET", true),
-		// Empty by default: the admin is served by this same process, so
-		// nothing needs cross-origin access until a third-party client does.
+		// Empty by default: the frontend's own server calls this API directly
+		// (server-to-server, not subject to CORS), so this is only needed for
+		// a browser calling the API itself.
 		CORSOrigins: splitList(os.Getenv("DROP_CORS_ORIGINS")),
 		S3: S3{
 			Endpoint:  env("DROP_S3_ENDPOINT", "localhost:9000"),
@@ -94,7 +92,6 @@ func Load() Config {
 			InvitationTTL:  envDuration("INVITATION_TTL", 72*time.Hour),
 			AdminEmail:     env("ADMIN_EMAIL", ""),
 			AdminPassword:  env("ADMIN_PASSWORD", ""),
-			CookieSecure:   envBool("AUTH_COOKIE_SECURE", false),
 		},
 	}
 }

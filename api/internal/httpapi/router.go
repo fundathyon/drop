@@ -1,16 +1,14 @@
-// Package httpapi exposes the admin API over HTTP using Gin, and serves its
-// OpenAPI documentation at /docs.
+// Package httpapi exposes the Drop JSON API over HTTP using Gin, and serves
+// its OpenAPI documentation at /docs. The admin UI is a separate frontend
+// (../../web) that calls this API server-side; this package renders no HTML
+// of its own beyond the published drops themselves.
 package httpapi
 
 import (
 	"errors"
-	"fmt"
-	"io/fs"
 	"log/slog"
 	"net/http"
-	"path"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -18,9 +16,7 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 
 	_ "drop/docs" // generated OpenAPI spec, registered on import
-	"drop/internal/adminui"
 	"drop/internal/auth"
-	"drop/internal/model"
 	"drop/internal/service"
 )
 
@@ -30,17 +26,16 @@ const maxUploadMemory = 32 << 20 // 32 MiB
 
 type Config struct {
 	// AllowedOrigins are the browser origins permitted to call this API
-	// cross-origin. The admin is served from this same process, so this is for
-	// third-party clients only.
+	// cross-origin. The frontend's own server calls this API directly
+	// (server-to-server, not subject to CORS), so this is only for a browser
+	// calling the API itself — a third-party client, or the frontend's
+	// server-only routes forwarding a browser request that still needs one.
 	AllowedOrigins []string
 	// InjectWidget appends the Drop badge to published HTML pages.
 	InjectWidget bool
 	// Auth is the account service. It is required: without it there would be
-	// nothing standing between the internet and the admin.
+	// nothing standing between the internet and every account's data.
 	Auth *auth.Service
-	// CookieSecure marks the session cookie Secure. Off for plain-HTTP
-	// localhost, and on everywhere else.
-	CookieSecure bool
 }
 
 // loginAttempts is how many credential checks one address gets per window.
@@ -51,7 +46,8 @@ const (
 	loginWindow   = time.Minute
 )
 
-// NewRouter builds the HTTP handler: the admin, the JSON API and the Swagger UI.
+// NewRouter builds the HTTP handler: the JSON API, the published drops, and
+// the Swagger UI.
 func NewRouter(svc *service.Service, cfg Config) (http.Handler, error) {
 	gin.SetMode(gin.ReleaseMode)
 
@@ -59,23 +55,11 @@ func NewRouter(svc *service.Service, cfg Config) (http.Handler, error) {
 		return nil, errors.New("auth service is required")
 	}
 
-	ui, err := adminui.New()
-	if err != nil {
-		return nil, fmt.Errorf("admin templates: %w", err)
-	}
-	static, err := adminui.Static()
-	if err != nil {
-		return nil, fmt.Errorf("admin assets: %w", err)
-	}
-
 	limiter := newAttemptLimiter(loginAttempts, loginWindow)
 
-	h := &handler{svc: svc, injectWidget: cfg.InjectWidget}
-	a := &adminHandler{svc: svc, accounts: cfg.Auth, ui: ui}
-	auths := &authHandler{svc: cfg.Auth, tree: svc, ui: ui, cookieSecure: cfg.CookieSecure, logins: limiter}
-	apiAuth := &apiAuthHandler{svc: cfg.Auth, logins: limiter}
+	h := &handler{svc: svc, injectWidget: cfg.InjectWidget, accounts: cfg.Auth}
+	apiAuth := &apiAuthHandler{svc: cfg.Auth, logins: limiter, tree: svc}
 
-	session := requireSession(cfg.Auth)
 	apiGuard := requireAPIAuth(cfg.Auth)
 
 	r := gin.New()
@@ -102,6 +86,13 @@ func NewRouter(svc *service.Service, cfg Config) (http.Handler, error) {
 		authAPI.GET("/me", apiGuard, apiAuth.me)
 	}
 
+	// First-run setup and accepting an invitation both happen before anyone has
+	// a session, so neither sits behind apiGuard — same as /v1/auth/login.
+	r.GET("/v1/setup/status", apiAuth.setupStatus)
+	r.POST("/v1/setup", apiAuth.setup)
+	r.GET("/v1/invitations/by-token", apiAuth.invitationByToken)
+	r.POST("/v1/invitations/accept", apiAuth.acceptInvitation)
+
 	v1 := r.Group("/v1", apiGuard)
 	{
 		v1.GET("/nodes", h.listNodes)
@@ -119,6 +110,11 @@ func NewRouter(svc *service.Service, cfg Config) (http.Handler, error) {
 		v1.POST("/files", h.uploadFiles)
 		v1.DELETE("/files", h.deleteFile)
 
+		v1.GET("/shares", h.listShares)
+		v1.POST("/shares", h.shareNode)
+		v1.DELETE("/shares", h.unshareNode)
+		v1.GET("/shared", h.listSharedWithMe)
+
 		// Account management is administrators only.
 		accounts := v1.Group("", requireAdminAPI)
 		accounts.GET("/users", apiAuth.listUsers)
@@ -129,57 +125,15 @@ func NewRouter(svc *service.Service, cfg Config) (http.Handler, error) {
 		accounts.DELETE("/invitations/:id", apiAuth.revokeInvitation)
 	}
 
-	// Swagger UI. /docs redirects to the index so the bare path works. It is
-	// behind the session too: the spec describes every endpoint and their
-	// shapes, which is a map worth not handing out.
-	r.GET("/docs", session, func(c *gin.Context) {
+	// Swagger UI. /docs redirects to the index so the bare path works. Nothing
+	// in it requires a session to read — the frontend never renders through
+	// this process anymore, so there is no cookie-based session left to gate
+	// it with — and the endpoints it describes are unusable without a real
+	// bearer token regardless of who can see the spec.
+	r.GET("/docs", func(c *gin.Context) {
 		c.Redirect(http.StatusMovedPermanently, "/docs/index.html")
 	})
-	r.GET("/docs/*any", session, ginSwagger.WrapHandler(swaggerFiles.Handler))
-
-	// Signing in, the invitation link, and the first-run wizard are the only
-	// admin pages reachable without a session — everything else redirects here.
-	r.GET("/login", auths.loginPage)
-	r.POST("/login", limitAttempts(limiter, auths.tooManyLogins), auths.login)
-	r.POST("/logout", auths.logout)
-	r.GET("/invitacion", auths.invitePage)
-	r.POST("/invitacion", auths.acceptInvite)
-	// setupGate above already keeps these two unreachable once an
-	// administrator exists; registered under the same no-session group as
-	// /login for that reason.
-	r.GET("/setup", auths.setupPage)
-	r.POST("/setup", auths.setup)
-
-	// The stylesheet and script are needed to render the login form itself, so
-	// they sit outside the session.
-	r.GET("/admin/static/*filepath", serveStatic(static))
-
-	// The admin. It is server-rendered, so every route it needs is registered
-	// here; anything else is a real 404 rather than a page.
-	r.GET("/", session, a.index)
-	r.GET("/compartido", session, a.shared)
-	r.GET("/admin/edit", session, a.edit)
-	admin := r.Group("/admin", session)
-	{
-		admin.POST("/folders", a.createFolder)
-		admin.POST("/drops", a.createDrop)
-		admin.POST("/drops/meta", a.updateMeta)
-		admin.POST("/drops/restore", a.restoreVersion)
-		admin.POST("/nodes/delete", a.deleteNode)
-		admin.POST("/files", a.uploadFiles)
-		admin.POST("/files/save", a.saveFile)
-		admin.POST("/files/delete", a.deleteFile)
-		admin.POST("/share", a.share)
-		admin.POST("/unshare", a.unshare)
-
-		// Accounts and invitations, administrators only.
-		accounts := admin.Group("/usuarios", requireAdminPage)
-		accounts.GET("", auths.usersPage)
-		accounts.POST("/activar", auths.setUserActive)
-		accounts.POST("/eliminar", auths.deleteUser)
-		accounts.POST("/invitaciones", auths.createInvitation)
-		accounts.POST("/invitaciones/revocar", auths.revokeInvitation)
-	}
+	r.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	r.NoRoute(notFound)
 
@@ -191,34 +145,6 @@ func NewRouter(svc *service.Service, cfg Config) (http.Handler, error) {
 func tooManyAttemptsJSON(c *gin.Context) {
 	abortWithError(c, http.StatusTooManyRequests, "too_many_attempts",
 		"too many attempts; wait a minute and try again")
-}
-
-// requireAdminPage keeps a signed-in non-administrator out of the account
-// screens, sending them back to the explorer with the reason.
-func requireAdminPage(c *gin.Context) {
-	user, ok := currentUser(c)
-	if !ok || user.Role != model.RoleAdmin {
-		setFlash(c, "error", "Solo un administrador puede gestionar cuentas")
-		c.Redirect(http.StatusSeeOther, "/")
-		c.Abort()
-		return
-	}
-	c.Next()
-}
-
-// serveStatic serves the admin's stylesheet and script. Their URLs carry a
-// digest of the contents, so a cached copy can never be the wrong one.
-func serveStatic(assets fs.FS) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		name := strings.TrimPrefix(path.Clean("/"+c.Param("filepath")), "/")
-		info, err := fs.Stat(assets, name)
-		if err != nil || info.IsDir() {
-			notFound(c)
-			return
-		}
-		c.Header("Cache-Control", "public, max-age=31536000, immutable")
-		http.ServeFileFS(c.Writer, c.Request, assets, name)
-	}
 }
 
 func notFound(c *gin.Context) {
