@@ -4,18 +4,22 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"drop/internal/auth"
+	"drop/internal/service"
 )
 
-// apiAuthHandler serves the JSON half of authentication: the tokens a script or
-// CLI carries. The admin's own sign-in is a form under /login, and the two do
-// not share a path — one hands out tokens, the other sets a cookie.
+// apiAuthHandler serves every auth-adjacent JSON endpoint: sessions, setup,
+// invitations, and account management.
 type apiAuthHandler struct {
 	svc    *auth.Service
 	logins *attemptLimiter
+	// tree is needed only to adopt ownerless nodes right after setup, the same
+	// one-time fixup the HTML wizard performs.
+	tree *service.Service
 }
 
 func abortWithAuthError(c *gin.Context, err error) {
@@ -293,6 +297,56 @@ func (a *apiAuthHandler) revokeInvitation(c *gin.Context) {
 	c.JSON(http.StatusOK, info)
 }
 
+// InvitationByToken godoc
+//
+//	@Summary		Preview an invitation before accepting it
+//	@Description	Lets the acceptance page decide what to show before asking for a password. Answers 410 once the invitation is no longer usable — already accepted, expired, or revoked.
+//	@Tags			invitations
+//	@Produce		json
+//	@Param			token	query		string	true	"Invitation token"
+//	@Success		200		{object}	auth.InvitationInfo
+//	@Failure		410		{object}	ErrorResponse
+//	@Router			/v1/invitations/by-token [get]
+func (a *apiAuthHandler) invitationByToken(c *gin.Context) {
+	info, err := a.svc.InvitationByToken(c.Request.Context(), c.Query("token"))
+	if err != nil {
+		abortWithAuthError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, info)
+}
+
+// AcceptInvitation godoc
+//
+//	@Summary		Create the account behind a pending invitation
+//	@Description	The invitation carries the email address, so only a name and a password are asked for. Does not sign the new account in — the password just chosen is the one immediately used to log in.
+//	@Tags			invitations
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		AcceptInvitationRequest	true	"Token and chosen password"
+//	@Success		201		{object}	auth.UserInfo
+//	@Failure		400		{object}	ErrorResponse
+//	@Failure		410		{object}	ErrorResponse
+//	@Router			/v1/invitations/accept [post]
+func (a *apiAuthHandler) acceptInvitation(c *gin.Context) {
+	var req AcceptInvitationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		abortWithError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		return
+	}
+	if req.Password != req.PasswordConfirm {
+		abortWithError(c, http.StatusBadRequest, "invalid_body", "passwords do not match")
+		return
+	}
+
+	user, err := a.svc.AcceptInvitation(c.Request.Context(), req.Token, req.Name, req.Password)
+	if err != nil {
+		abortWithAuthError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, user)
+}
+
 func tokenResponse(tokens auth.Tokens, user auth.UserInfo) TokenResponse {
 	return TokenResponse{
 		AccessToken:  tokens.AccessToken,
@@ -311,4 +365,14 @@ func pathID(c *gin.Context) (uint, bool) {
 		return 0, false
 	}
 	return uint(id), true
+}
+
+// absoluteURL builds a link the recipient can open, since an invitation is
+// handed over out of band.
+func absoluteURL(c *gin.Context, path string) string {
+	scheme := "http"
+	if c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https") {
+		scheme = "https"
+	}
+	return scheme + "://" + c.Request.Host + path
 }

@@ -117,3 +117,52 @@ type CreateInvitationResponse struct {
 type SetUserActiveRequest struct {
 	Active *bool `json:"active" binding:"required" example:"false"`
 }
+
+// ShareRequest grants or updates a user's access to the node named by the
+// `path`/`owner` query parameters.
+type ShareRequest struct {
+	UserID uint         `json:"user_id" binding:"required" example:"2"`
+	Access model.Access `json:"access" binding:"required" enums:"viewer,editor" example:"viewer"`
+}
+
+// ShareListResponse is who already has access to a node, and who could still
+// be given some — the same filter (excludes the owner and disabled accounts)
+// the admin UI applies before offering a share dialog.
+type ShareListResponse struct {
+	Path       string              `json:"path" example:"proyectos/arquitectura"`
+	Shares     []service.ShareInfo `json:"shares"`
+	Candidates []auth.UserInfo     `json:"candidates"`
+}
+
+// SharedResponse is what other people have granted the caller, across every
+// drive — one-directional, and never includes the caller's own grants to
+// others.
+type SharedResponse struct {
+	Nodes []service.SharedNode `json:"nodes"`
+}
+
+// SetupStatusResponse reports whether this instance still needs its first
+// administrator.
+type SetupStatusResponse struct {
+	NeedsSetup bool `json:"needs_setup" example:"true"`
+}
+
+// SetupRequest creates the organization and its first administrator. It is
+// the one request an empty instance accepts.
+type SetupRequest struct {
+	OrgName         string `json:"org_name" binding:"required" example:"Acme"`
+	Name            string `json:"name" example:"Rafa"`
+	Email           string `json:"email" binding:"required" example:"admin@drop.local"`
+	Password        string `json:"password" binding:"required"`
+	PasswordConfirm string `json:"password_confirm" binding:"required"`
+}
+
+// AcceptInvitationRequest creates the account behind a pending invitation.
+// The invitation itself carries the address, so there is nothing here for the
+// recipient to mistype into someone else's invitation.
+type AcceptInvitationRequest struct {
+	Token           string `json:"token" binding:"required"`
+	Name            string `json:"name" example:"Rafa"`
+	Password        string `json:"password" binding:"required"`
+	PasswordConfirm string `json:"password_confirm" binding:"required"`
+}

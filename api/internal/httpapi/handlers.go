@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"drop/internal/auth"
 	"drop/internal/model"
 	"drop/internal/service"
 )
@@ -24,6 +25,9 @@ type handler struct {
 	// injectWidget appends the Drop badge to published HTML pages. It is the
 	// one thing the API adds to user content, so it can be switched off.
 	injectWidget bool
+	// accounts is only used to offer a list of people to share with; the tree
+	// itself knows nothing about users beyond their ids.
+	accounts *auth.Service
 }
 
 // Health godoc
