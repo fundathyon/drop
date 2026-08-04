@@ -1,0 +1,96 @@
+name: drop
+
+# Deploy target: a VPS running Dokploy, with Traefik as the reverse proxy
+# Dokploy already manages. Pulls prebuilt images from Docker Hub instead of
+# building from source — `.github/workflows/main.yaml` is what publishes
+# them. Storage stays SQLite + a single MinIO container for now; nothing
+# here assumes Postgres or an external object store.
+#
+# Set these in Dokploy's environment variables for this app before deploying:
+#   WEB_DOMAIN            e.g. drop.yourdomain.com — the admin UI
+#   API_DOMAIN            e.g. api.drop.yourdomain.com — published drops + the API
+#   DROP_S3_ACCESS_KEY    MinIO root user (pick your own, don't use the local-dev default)
+#   DROP_S3_SECRET_KEY    MinIO root password
+#   PRIVATE_KEY_JWT       RS256 private key PEM — generate locally with `make keys`,
+#   PUBLIC_KEY_JWT         paste both in full (real or \n-escaped newlines both work)
+#   DROP_API_TAG          optional, defaults to latest
+#   DROP_WEB_TAG          optional, defaults to latest
+#
+# ADMIN_EMAIL/ADMIN_PASSWORD are deliberately left unset: a fresh deploy has
+# no administrator yet, so the first visit to WEB_DOMAIN runs the /setup
+# wizard instead of booting with a fixed, guessable account.
+
+networks:
+  # Created by Dokploy; every service Traefik should route to must join it.
+  dokploy-network:
+    external: true
+
+services:
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    networks:
+      - dokploy-network
+    environment:
+      MINIO_ROOT_USER: ${DROP_S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${DROP_S3_SECRET_KEY}
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # No public ports and no Traefik labels: nothing serves files straight
+    # from MinIO, the API always reads through and streams them, so there is
+    # nothing here worth exposing past the compose network.
+
+  api:
+    image: getfoundathyon/drop-api:${DROP_API_TAG:-latest}
+    networks:
+      - dokploy-network
+    environment:
+      DROP_DATABASE_DSN: /data/drop.db
+      DROP_PUBLIC_BASE_URL: https://${API_DOMAIN}
+      DROP_S3_ENDPOINT: minio:9000
+      DROP_S3_ACCESS_KEY: ${DROP_S3_ACCESS_KEY}
+      DROP_S3_SECRET_KEY: ${DROP_S3_SECRET_KEY}
+      PRIVATE_KEY_JWT: ${PRIVATE_KEY_JWT}
+      PUBLIC_KEY_JWT: ${PUBLIC_KEY_JWT}
+    volumes:
+      - api-data:/data
+    depends_on:
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.drop-api.rule=Host(`${API_DOMAIN}`)
+      - traefik.http.routers.drop-api.entrypoints=websecure
+      - traefik.http.routers.drop-api.tls.certResolver=letsencrypt
+      - traefik.http.services.drop-api.loadbalancer.server.port=8000
+
+  web:
+    image: getfoundathyon/drop-web:${DROP_WEB_TAG:-latest}
+    networks:
+      - dokploy-network
+    environment:
+      # Server-to-server, over the compose network — never through Traefik.
+      DROP_API_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.drop-web.rule=Host(`${WEB_DOMAIN}`)
+      - traefik.http.routers.drop-web.entrypoints=websecure
+      - traefik.http.routers.drop-web.tls.certResolver=letsencrypt
+      - traefik.http.services.drop-web.loadbalancer.server.port=3000
+
+volumes:
+  minio-data:
+  api-data:
