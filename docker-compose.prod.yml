@@ -47,6 +47,11 @@ services:
 
   api:
     image: getfoundathyon/drop-api:${DROP_API_TAG:-latest}
+    # Build from source instead, if you'd rather not depend on the published
+    # image (context is the repo root for both targets — see ./Dockerfile):
+    #   build:
+    #     context: .
+    #     target: api
     networks:
       - dokploy-network
     environment:
@@ -76,6 +81,10 @@ services:
 
   web:
     image: getfoundathyon/drop-web:${DROP_WEB_TAG:-latest}
+    # Build from source instead — see the note on api above:
+    #   build:
+    #     context: .
+    #     target: web
     networks:
       - dokploy-network
     environment:

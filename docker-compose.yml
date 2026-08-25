@@ -10,8 +10,16 @@ services:
       - "9000:9000" # S3 API
       - "9001:9001" # web console
     environment:
-      MINIO_ROOT_USER: ${DROP_S3_ACCESS_KEY:-dropadmin}
-      MINIO_ROOT_PASSWORD: ${DROP_S3_SECRET_KEY:-dropadmin123}
+      # Fixed, not ${DROP_S3_ACCESS_KEY}. Compose auto-loads the repo-root
+      # .env for EVERY compose file in the project, including this one — and
+      # that file holds the Dokploy deploy values (see docker-compose.prod.yml).
+      # Substituting here meant MinIO booted with the deploy's credentials
+      # while the from-source API kept reading apps/api/.env, so `make dev`
+      # died with "The Access Key Id you provided does not exist in our
+      # records". These are local-only throwaway credentials and must stay in
+      # step with apps/api/.env; production gets its own pair from Dokploy.
+      MINIO_ROOT_USER: dropadmin
+      MINIO_ROOT_PASSWORD: dropadmin123
     volumes:
       - minio-data:/data
     healthcheck:
@@ -20,7 +28,7 @@ services:
       timeout: 5s
       retries: 20
 
-    # The bucket is created by the API on startup (see internal/objects), so
+    # The bucket is created by the API on startup (see apps/api/internal/objects), so
     # there is no init container here: a one-shot container that exits is
     # neither running nor healthy, which makes `up --wait` report a failure.
 
@@ -28,17 +36,23 @@ services:
   # still means "just MinIO", the shape local `make dev` (running the API
   # from source) expects. `docker compose --profile full up` is the one
   # command that runs the whole thing, API and frontend included: run
-  # `make keys` first so ./api/certs has a keypair to mount in.
+  # `make keys` first so ./apps/api/certs has a keypair to mount in.
+  #
+  # Built from the repo-root Dockerfile by target, not from apps/api: the web
+  # target needs the workspace root anyway, so both images share one context.
   api:
     profiles: ["full"]
-    build: ./api
+    build:
+      context: .
+      target: api
     ports:
       - "8000:8000"
     environment:
       DROP_DATABASE_DSN: /data/drop.db
       DROP_S3_ENDPOINT: minio:9000
-      DROP_S3_ACCESS_KEY: ${DROP_S3_ACCESS_KEY:-dropadmin}
-      DROP_S3_SECRET_KEY: ${DROP_S3_SECRET_KEY:-dropadmin123}
+      # Same pair as the minio service above, for the same reason.
+      DROP_S3_ACCESS_KEY: dropadmin
+      DROP_S3_SECRET_KEY: dropadmin123
       DROP_CORS_ORIGINS: http://localhost:3000
       JWT_PRIVATE_KEY_PATH: /certs/private.pem
       JWT_PUBLIC_KEY_PATH: /certs/public.pem
@@ -46,7 +60,7 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
     volumes:
       - api-data:/data
-      - ./api/certs:/certs:ro
+      - ./apps/api/certs:/certs:ro
     depends_on:
       minio:
         condition: service_healthy
@@ -60,7 +74,9 @@ services:
   # through the published :8000 port a browser would use.
   web:
     profiles: ["full"]
-    build: ./web
+    build:
+      context: .
+      target: web
     ports:
       - "3000:3000"
     environment:

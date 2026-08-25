@@ -11,12 +11,8 @@ on:
         description: 'Image name appended to REGISTRY_NAME (e.g. drop-api, drop-web)'
         required: true
         type: string
-      dockerfile:
-        description: 'Path to the Dockerfile'
-        required: true
-        type: string
-      context:
-        description: 'Docker build context'
+      target:
+        description: 'Stage to build in the root Dockerfile (api or web)'
         required: true
         type: string
     outputs:
@@ -50,11 +46,13 @@ jobs:
           IMAGE="${REGISTRY_URL}/${REGISTRY_NAME}/${{ inputs.image_name }}"
           SHA="${{ steps.meta.outputs.sha }}"
 
-          echo "🚧 Building image: $IMAGE"
-          docker build -f "${{ inputs.dockerfile }}" \
+          echo "🚧 Building image: $IMAGE (target: ${{ inputs.target }})"
+          # One Dockerfile, one context (the repo root) for every image: the
+          # web target needs the Bun workspace root, not just apps/web.
+          docker build --target "${{ inputs.target }}" -f Dockerfile \
             -t "$IMAGE:latest" \
             -t "$IMAGE:${SHA}" \
-            "${{ inputs.context }}"
+            .
 
           echo "📤 Pushing tags..."
           docker push "$IMAGE:latest"

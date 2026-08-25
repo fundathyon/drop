@@ -13,8 +13,7 @@ jobs:
     with:
       environment: production
       image_name: drop-api
-      dockerfile: api/Dockerfile
-      context: api
+      target: api
     secrets: inherit
 
   # 🛠️ Build and push the frontend image
@@ -23,6 +22,5 @@ jobs:
     with:
       environment: production
       image_name: drop-web
-      dockerfile: web/Dockerfile
-      context: web
+      target: web
     secrets: inherit
