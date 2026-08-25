@@ -27,9 +27,10 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     public code: string,
-    message: string
+    message: string,
+    options?: ErrorOptions
   ) {
-    super(message);
+    super(message, options);
     this.name = "ApiError";
   }
 }
@@ -57,7 +58,33 @@ async function request<T>(path: string, init?: RequestInit, auth = true): Promis
     headers.set("Content-Type", "application/json");
   }
 
-  const res = await fetch(`${API_URL}${path}`, { ...init, headers, cache: "no-store" });
+  // A connection failure and an HTTP error are different problems and deserve
+  // different messages. Left alone, `fetch` throws a bare `TypeError: fetch
+  // failed` with no mention of the URL, the page 500s, and React then reports
+  // a confusing "Encountered a script tag" warning from the root layout as it
+  // re-renders the error client-side — three symptoms, none of which say "the
+  // API is not running".
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, { ...init, headers, cache: "no-store" });
+  } catch (cause) {
+    // Only a real connection failure becomes an ApiError. Next signals control
+    // flow by THROWING from its patched fetch — the dynamic-render bailout
+    // during `next build` (digest "DYNAMIC_SERVER_USAGE"), redirect(),
+    // notFound() — and those are not failures: swallowing the bailout turns a
+    // perfectly normal dynamic route into a hard build error. undici surfaces
+    // an unreachable host as a TypeError, which is the only case wrapped here;
+    // everything else keeps travelling untouched.
+    if (!(cause instanceof TypeError) || (cause as { digest?: unknown }).digest !== undefined) {
+      throw cause;
+    }
+    throw new ApiError(
+      503,
+      "api_unreachable",
+      `cannot reach the Drop API at ${API_URL} — is it running? (start it with 'make dev', or 'make up' for the whole stack)`,
+      { cause }
+    );
+  }
 
   if (res.status === 204) return undefined as T;
 
