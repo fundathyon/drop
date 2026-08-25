@@ -1,15 +1,31 @@
 # Drop
 
-Plataforma para publicar artefactos HTML estáticos. Dos servicios:
+Plataforma para publicar artefactos HTML estáticos. Dos servicios, un repo:
 
-- [`api/`](api) — Go + Gin, GORM sobre SQLite, MinIO y Swagger. `go build`
-  produce **un solo binario** que sirve la API JSON y los drops publicados.
-- [`web/`](web) — Next.js (App Router) + Bun, el panel de administración.
-  Server Components y Server Actions llaman a la API **desde el servidor de
-  Next**, nunca desde el navegador: el navegador solo habla con `web`.
+```
+apps/api/            Go — la API JSON y los drops publicados
+apps/web/            Next.js — el panel de administración
+infra/docker/        piezas compartidas por las imágenes de runtime
+Dockerfile           un solo archivo, dos targets: --target api | --target web
+package.json         raíz del workspace de Bun (apps/*, packages/*)
+```
+
+- [`apps/api/`](apps/api) — Go + Gin, GORM sobre SQLite, MinIO y Swagger.
+  `go build` produce **un solo binario** que sirve la API JSON y los drops
+  publicados.
+- [`apps/web/`](apps/web) — Next.js (App Router) + Bun, el panel de
+  administración. Server Components y Server Actions llaman a la API **desde
+  el servidor de Next**, nunca desde el navegador: el navegador solo habla
+  con `web`.
+
+El repo es un **workspace de Bun**: el `package.json` y el `bun.lock` viven en
+la raíz, no dentro de `apps/web`. `bun install` desde la raíz instala las
+dependencias de todos los paquetes, y `bun run --filter web <script>` ejecuta
+cualquier script del frontend sin cambiar de directorio (`make` ya lo hace por
+ti en los targets de abajo).
 
 El admin dejó de renderizarse en Go — vivió ahí como páginas `html/template`
-empotradas con `go:embed` hasta que se separó en `web/`. La API en sí no
+empotradas con `go:embed` hasta que se separó en `apps/web/`. La API en sí no
 cambió: sigue siendo la misma bajo `/v1`, con `Authorization: Bearer` como
 único mecanismo de sesión.
 
@@ -46,7 +62,7 @@ espejo. Es a propósito: cuando el tamaño se calculaba aparte de los bytes, las
 dos cosas se desincronizaban y el `Content-Length` dejaba la descarga a medias.
 
 La base es SQLite *por ahora*; cambiar a Postgres es cambiar el driver en
-[`internal/db`](api/internal/db/db.go), no los modelos.
+[`internal/db`](apps/api/internal/db/db.go), no los modelos.
 
 ## Versiones
 
@@ -73,33 +89,37 @@ OrbStack…) — o solo Docker, si prefieres correr todo containerizado.
 **La forma más simple, un solo comando:**
 
 ```bash
-make up-all
+make up
 ```
 
 Genera el par de claves si hace falta, y construye y levanta MinIO, la API y el
 admin con `docker compose`. Todo queda arriba en un par de minutos:
 `http://localhost:3000` es el panel, `http://localhost:8000` la API. `make
-down-all` lo baja.
+down` lo baja.
 
-**Para desarrollar, con recarga en caliente**, en dos terminales:
+**Para desarrollar, con recarga en caliente**, un solo comando:
 
 ```bash
-make dev       # MinIO + la API desde el código, en :8000
-make dev-web   # el admin desde el código, en :3000
+make dev
 ```
+
+Levanta MinIO en Docker y corre la API (:8000) y el admin (:3000) desde el
+código, las dos en la misma terminal. Ctrl-C para las dos a la vez. Si quieres
+una sola mitad, `make dev-api` y `make dev-web` las corren por separado.
 
 La primera vez que abras `http://localhost:3000` te pedirá configurar la
 organización, tu cuenta y la contraseña maestra — no hay contraseña por
 defecto. Para un despliegue sin navegador (Docker, CI…), define `ADMIN_EMAIL` y
-`ADMIN_PASSWORD` en `api/.env` y ese administrador se crea solo al arrancar.
+`ADMIN_PASSWORD` en `apps/api/.env` y ese administrador se crea solo al arrancar.
 
 Otros targets:
 
 ```bash
 make help       # lista todos los targets
 make seed       # llena el árbol con contenido de demo vía la API real
-make up/down    # solo el stack de MinIO
-make up-all/down-all  # todo containerizado (MinIO + API + web)
+make dev-api/dev-web   # una sola mitad desde el código
+make minio/minio-down  # solo el stack de MinIO, lo que necesita `make dev`
+make logs       # sigue los logs de lo que esté corriendo
 make test       # go test + go vet
 make test-web   # typecheck + lint + test del frontend
 make swagger    # regenera el OpenAPI desde las anotaciones
@@ -206,7 +226,7 @@ administrador, ninguna de las dos vías lo toca — ni su contraseña.
 ## Endpoints
 
 Todo lo que sirve la API vive bajo `/v1` (JSON) o `/d` (drops publicados); el
-panel en `web/` es quien traduce esto a pantallas.
+panel en `apps/web/` es quien traduce esto a pantallas.
 
 ```
 GET    /healthz
@@ -273,7 +293,8 @@ una carpeta).
 
 ## Configuración
 
-La API lee [`api/.env`](api/.env); el frontend lee [`web/.env.local`](web/.env.example).
+La API lee [`apps/api/.env`](apps/api/.env); el frontend lee
+[`apps/web/.env.local`](apps/web/.env.example).
 
 | Variable | Por defecto | Descripción |
 |---|---|---|
@@ -298,7 +319,7 @@ La API lee [`api/.env`](api/.env); el frontend lee [`web/.env.local`](web/.env.e
 Ninguna caducidad está fijada en el código: todas salen de aquí, así que la
 ventana de un token robado se cambia sin recompilar.
 
-`web/.env.local` (o `web/.env.example` como plantilla) solo necesita
+`apps/web/.env.local` (o `apps/web/.env.example` como plantilla) solo necesita
 `DROP_API_URL`, el origen de la API tal como lo alcanza **el servidor** de
 Next — `http://localhost:8000` en desarrollo, `http://api:8000` dentro de
 `docker compose --profile full`.

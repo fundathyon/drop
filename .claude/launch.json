@@ -4,13 +4,13 @@
     {
       "name": "api",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "cd api && go run ./cmd/dropd"],
+      "runtimeArgs": ["-c", "go -C apps/api run ./cmd/dropd"],
       "port": 8000
     },
     {
       "name": "web",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "cd web && bun run dev"],
+      "runtimeArgs": ["-c", "bun run --filter web dev"],
       "port": 3000
     }
   ]

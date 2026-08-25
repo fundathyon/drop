@@ -1,0 +1,15 @@
+{
+  "name": "drop",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun run --filter web dev",
+    "build": "bun run --filter web build",
+    "lint": "bun run --filter web lint",
+    "typecheck": "bun run --filter web typecheck",
+    "test": "bun run --filter web test"
+  }
+}

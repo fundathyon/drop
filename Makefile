@@ -1,20 +1,52 @@
-API_DIR := api
-WEB_DIR := web
+API_DIR := apps/api
+WEB_DIR := apps/web
 GOPATH_BIN := $(shell go env GOPATH)/bin
 CERTS_DIR := $(API_DIR)/certs
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev dev-web up down up-all down-all logs seed keys api build build-web run swagger test test-web clean reset
+.PHONY: help install up down dev dev-api dev-web minio minio-down logs seed keys api build build-web run swagger test test-web clean reset
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
 
-dev: up keys api ## Start MinIO and run the API from source on :8000 (run `make dev-web` too for the admin UI)
+install: ## Download Go modules and install the Bun workspace dependencies
+	go -C $(API_DIR) mod download
+	bun install
 
-dev-web: ## Run the admin frontend from source on :3000 — needs `make dev` running in another terminal
-	cd $(WEB_DIR) && bun install && bun run dev
+up: keys ## Levanta la app entera — MinIO, API y admin — con un solo comando
+	docker compose --profile full up -d --wait --build --remove-orphans
+	@echo ""
+	@echo "  Panel      http://localhost:3000"
+	@echo "  API        http://localhost:8000"
+	@echo "  MinIO      http://localhost:9001"
+	@echo ""
+	@echo "  logs: docker compose --profile full logs -f   ·   parar: make down"
+
+down: ## Baja la app entera
+	docker compose --profile full down
+
+dev: minio keys ## Levanta la app entera desde el código, con recarga en caliente: MinIO en Docker, API en :8000 y admin en :3000
+	@bun install
+	@echo ""
+	@echo "  Panel      http://localhost:3000"
+	@echo "  API        http://localhost:8000"
+	@echo "  Ctrl-C para parar ambos"
+	@echo ""
+	@# One shell for both halves, with a trap on the process group: Ctrl-C has
+	@# to take the API and the frontend down together, or the survivor keeps
+	@# holding :8000 (or :3000) and the next `make dev` fails to bind.
+	@trap 'kill 0' EXIT INT TERM; \
+	go -C $(API_DIR) run ./cmd/dropd & \
+	bun run --filter web dev & \
+	wait
+
+dev-api: minio keys api ## Solo la API desde el código, en :8000
+
+dev-web: ## Solo el admin desde el código, en :3000 — necesita la API levantada aparte
+	bun install
+	bun run --filter web dev
 
 keys: $(CERTS_DIR)/private.pem ## Generate the RS256 keypair used to sign tokens
 
@@ -27,51 +59,69 @@ $(CERTS_DIR)/private.pem:
 	chmod 600 $(CERTS_DIR)/private.pem
 	@echo "wrote $(CERTS_DIR)/{private,public}.pem"
 
-up: ## Start the MinIO stack in the background
+minio: ## Start just the MinIO stack in the background — what `make dev` needs
 	docker compose up -d --wait --remove-orphans
 
-down: ## Stop the MinIO stack
+minio-down: ## Stop the MinIO stack
 	docker compose down
 
-up-all: keys ## Build and start the whole stack — MinIO, API and web — in one command
-	docker compose --profile full up -d --wait --build --remove-orphans
-
-down-all: ## Stop the whole stack started by `make up-all`
-	docker compose --profile full down
-
-logs: ## Follow the MinIO logs
-	docker compose logs -f
+logs: ## Follow the logs of whatever is running
+	docker compose --profile full logs -f
 
 seed: ## Fill the tree with demo content through the running API
 	@./scripts/seed.sh
 
 api: keys ## Run the API from source: JSON API and published drops on :8000
-	cd $(API_DIR) && go run ./cmd/dropd
+	go -C $(API_DIR) run ./cmd/dropd
 
 build: ## Build the API binary
-	cd $(API_DIR) && go build -o dropd ./cmd/dropd
+	go -C $(API_DIR) build -o dropd ./cmd/dropd
 	@echo "built $(API_DIR)/dropd — start it with: make run"
 
 build-web: ## Build the admin frontend for production
-	cd $(WEB_DIR) && bun install && bun run build
+	bun install
+	bun run --filter web build
 
 run: keys ## Run the built API binary
-	cd $(API_DIR) && ./dropd
+	$(API_DIR)/dropd
 
 swagger: ## Regenerate the OpenAPI spec from the handler annotations
 	cd $(API_DIR) && $(GOPATH_BIN)/swag init -g cmd/dropd/main.go --parseDependency --parseInternal -o docs
 
 test: ## Run the API tests
-	cd $(API_DIR) && go test ./... && go vet ./...
+	go -C $(API_DIR) test ./... && go -C $(API_DIR) vet ./...
 
 test-web: ## Typecheck, lint and test the admin frontend
-	cd $(WEB_DIR) && bun install && bun run typecheck && bun run lint && bun run test
+	bun install
+	bun run --filter web typecheck
+	bun run --filter web lint
+	bun run --filter web test
 
 clean: ## Remove build output, the local database, and MinIO volumes
 	rm -f $(API_DIR)/dropd $(API_DIR)/drop.db
-	docker compose down -v
+	rm -rf $(WEB_DIR)/.next
+	docker compose --profile full down -v
 
 reset: ## Wipe the database and object storage — the next run starts from the setup wizard, as if configured for the first time
-	rm -f $(API_DIR)/drop.db
-	docker compose --profile full down -v --remove-orphans
-	@echo "Wiped. Run 'make dev' (or 'make up-all') to start over from /setup."
+	@# The -wal/-shm sidecars matter: delete only the .db and SQLite can replay
+	@# a write-ahead log into a brand new file, which brings the old admin back
+	@# and the wizard never appears.
+	rm -f $(API_DIR)/drop.db $(API_DIR)/drop.db-wal $(API_DIR)/drop.db-shm
+	@# Tolerated rather than required: the volumes only exist if the stack has
+	@# been up at least once, and `make reset` should still clear the local DB
+	@# on a machine with no container runtime running.
+	-docker compose --profile full down -v --remove-orphans
+	@echo ""
+	@echo "  Wiped: local database and MinIO volumes."
+	@# Deleting the database is not enough on its own: when both ADMIN_EMAIL and
+	@# ADMIN_PASSWORD are set, the API re-creates that administrator on every
+	@# fresh boot (apps/api/cmd/dropd/main.go), so /setup redirects straight to
+	@# /login and the wizard never appears. Say so instead of promising it.
+	@if grep -qE '^[[:space:]]*ADMIN_EMAIL[[:space:]]*=[[:space:]]*[^[:space:]#]' $(API_DIR)/.env 2>/dev/null; then \
+		echo ""; \
+		echo "  Heads up: $(API_DIR)/.env still sets ADMIN_EMAIL/ADMIN_PASSWORD, so the"; \
+		echo "  next boot re-creates that administrator and /setup sends you to /login."; \
+		echo "  Comment both lines out first if you want the setup wizard."; \
+	else \
+		echo "  Next 'make up' (or 'make dev') starts over from /setup."; \
+	fi
