@@ -2,18 +2,21 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
+import { User, Users } from "lucide-react";
 import {
+  Button,
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Icon } from "@/components/icon";
+  Icon,
+  RoleBadge,
+  Text,
+} from "@foundathyon/community-ui";
 import { RemoveShareButton } from "./remove-share-button";
 import { AddShareForm } from "./add-share-form";
 import type { ShareInfo, UserInfo } from "@/lib/types";
@@ -37,13 +40,14 @@ export function ShareDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Icon name="users" className="size-4" />
-          {t("share.trigger")}
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
+      <DialogTrigger
+        render={
+          <Button variant="secondary" size="sm" leading={<Users />}>
+            {t("share.trigger")}
+          </Button>
+        }
+      />
+      <DialogContent size="md">
         <DialogHeader>
           <DialogTitle>{t("share.title", { title })}</DialogTitle>
           <DialogDescription>
@@ -51,20 +55,20 @@ export function ShareDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-3 py-2">
+        <DialogBody className="flex flex-col gap-3 py-2">
           {shares.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t("share.empty")}</p>
+            <Text tone="muted">{t("share.empty")}</Text>
           ) : (
             <ul className="flex flex-col gap-2">
               {shares.map((share) => (
                 <li key={share.id} className="flex items-center gap-2 text-sm">
-                  <Icon name="user" className="size-4 shrink-0 text-muted-foreground" />
+                  <Icon icon={User} size={14} className="text-text-muted shrink-0" />
                   <span className="min-w-0 flex-1 truncate">
-                    {share.name} <span className="text-muted-foreground">{share.email}</span>
+                    {share.name} <span className="text-text-muted">{share.email}</span>
                   </span>
-                  <Badge variant="secondary">
+                  <RoleBadge role={share.access === "editor" ? "editor" : "viewer"}>
                     {share.access === "editor" ? t("share.accessEditor") : t("share.accessViewer")}
-                  </Badge>
+                  </RoleBadge>
                   <RemoveShareButton
                     path={path}
                     owner={owner}
@@ -77,10 +81,10 @@ export function ShareDialog({
           )}
 
           <AddShareForm path={path} owner={owner} candidates={candidates} />
-        </div>
+        </DialogBody>
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+          <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
             {tc("close")}
           </Button>
         </DialogFooter>

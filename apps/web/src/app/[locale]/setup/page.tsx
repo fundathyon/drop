@@ -1,6 +1,5 @@
 import { api } from "@/lib/api";
 import { redirect } from "@/i18n/navigation";
-import { AuthShell } from "@/components/auth-shell";
 import { SetupForm } from "./setup-form";
 
 export default async function SetupPage({ params }: { params: Promise<{ locale: string }> }) {
@@ -13,9 +12,5 @@ export default async function SetupPage({ params }: { params: Promise<{ locale: 
     return redirect({ href: "/login", locale });
   }
 
-  return (
-    <AuthShell>
-      <SetupForm />
-    </AuthShell>
-  );
+  return <SetupForm />;
 }

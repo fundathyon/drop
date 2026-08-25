@@ -2,7 +2,6 @@ import { getCurrentUser } from "@/lib/session";
 import { redirect } from "@/i18n/navigation";
 import { safeNext } from "@/lib/safe-next";
 import { api } from "@/lib/api";
-import { AuthShell } from "@/components/auth-shell";
 import { LoginForm } from "./login-form";
 
 export default async function LoginPage({
@@ -28,9 +27,5 @@ export default async function LoginPage({
     return redirect({ href: safeNext(query.next), locale });
   }
 
-  return (
-    <AuthShell>
-      <LoginForm next={safeNext(query.next)} email={query.email ?? ""} message={query.message} />
-    </AuthShell>
-  );
+  return <LoginForm next={safeNext(query.next)} email={query.email ?? ""} message={query.message} />;
 }

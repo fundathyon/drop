@@ -2,9 +2,8 @@
 
 import { useActionState, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/icon";
+import { Mail } from "lucide-react";
+import { Button, Dialog, DialogContent, DialogTrigger } from "@foundathyon/community-ui";
 import { createInvitationAction } from "./actions";
 import { InviteForm, InviteLinkReveal } from "./invite-dialog-views";
 
@@ -25,13 +24,14 @@ export function InviteDialog() {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>
-        <Button size="sm">
-          <Icon name="mail" className="size-4" />
-          {t("invite")}
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
+      <DialogTrigger
+        render={
+          <Button variant="primary" size="sm" leading={<Mail />}>
+            {t("invite")}
+          </Button>
+        }
+      />
+      <DialogContent size="sm">
         <InviteDialogBody key={sessionKey} onClose={() => handleOpenChange(false)} />
       </DialogContent>
     </Dialog>

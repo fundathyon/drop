@@ -10,6 +10,39 @@
     "saving": "Saving…",
     "delete": "Delete",
     "deleting": "Deleting…",
-    "unexpectedError": "Unexpected error"
+    "unexpectedError": "Unexpected error",
+    "features": [
+      "Publish a folder and it is online instantly",
+      "Every publish is a version — roll back whenever you want",
+      "Share with your team by role, or open the drop to the world"
+    ],
+    "poweredBy": "Powered by Foundathyon"
+  },
+  "colors": {
+    "title": "Accent",
+    "hint": "Development tool: try the palette out. Never shipped to production.",
+    "pageTitle": "Palette",
+    "pageDescription": "Every swatch uses the design system's real tokens. Change the accent with the picker above and everything on this page repaints.",
+    "sectionAccent": "Accent",
+    "sectionSemantic": "Semantic tones",
+    "sectionSurfaces": "Surfaces and text",
+    "sectionFiletypes": "Filetype colors",
+    "sectionComponents": "Components on the current accent",
+    "names": {
+      "red": "Red",
+      "orange": "Orange",
+      "amber": "Amber",
+      "lime": "Lime",
+      "emerald": "Emerald",
+      "teal": "Teal",
+      "cyan": "Cyan",
+      "sky": "Sky",
+      "blue": "Blue",
+      "indigo": "Indigo",
+      "violet": "Violet",
+      "purple": "Purple",
+      "magenta": "Magenta",
+      "pink": "Pink"
+    }
   }
 }

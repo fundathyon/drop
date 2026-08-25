@@ -1,10 +1,9 @@
 "use client";
 
 import { useTransition } from "react";
-import { toast } from "sonner";
 import { useTranslations } from "next-intl";
-import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/icon";
+import { Trash2 } from "lucide-react";
+import { Button, IconButton, useToast } from "@foundathyon/community-ui";
 import { ConfirmAction } from "@/components/confirm-action";
 import { deleteUserAction, setUserActiveAction } from "./actions";
 
@@ -14,25 +13,24 @@ import { deleteUserAction, setUserActiveAction } from "./actions";
 // just come back as an error.
 export function UserActions({ id, active, email }: { id: number; active: boolean; email: string }) {
   const t = useTranslations("users");
+  const { toast } = useToast();
   const [pending, startTransition] = useTransition();
 
   function toggleActive() {
     startTransition(async () => {
       const result = await setUserActiveAction(id, !active);
-      if (result?.error) toast.error(result.error);
+      if (result?.error) toast({ title: result.error, tone: "danger" });
     });
   }
 
   return (
     <div className="flex items-center justify-end gap-2">
-      <Button variant="outline" size="sm" disabled={pending} onClick={toggleActive}>
+      <Button variant="secondary" size="sm" loading={pending} onClick={toggleActive}>
         {active ? t("deactivate") : t("reactivate")}
       </Button>
       <ConfirmAction
         trigger={
-          <Button variant="ghost" size="icon" aria-label={t("deleteUserAriaLabel", { email })}>
-            <Icon name="trash-2" className="size-4" />
-          </Button>
+          <IconButton variant="destructive-subtle" icon={Trash2} label={t("deleteUserAriaLabel", { email })} />
         }
         title={t("deleteUserTitle")}
         description={t("deleteUserDescription", { email })}

@@ -2,20 +2,22 @@
 
 import { useActionState, useState } from "react";
 import { useTranslations } from "next-intl";
+import { PackagePlus } from "lucide-react";
 import {
+  Button,
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Icon } from "@/components/icon";
+  FormField,
+  Input,
+  Select,
+  SelectItem,
+} from "@foundathyon/community-ui";
 import { useCloseOnSuccess } from "@/hooks/use-close-on-success";
 import { createDropAction } from "./actions";
 import { Dropzone } from "./dropzone";
@@ -30,13 +32,14 @@ export function NewDropDialog({ parent, owner }: { parent: string; owner?: numbe
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm">
-          <Icon name="package-plus" className="size-4" />
-          {t("newDrop")}
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
+      <DialogTrigger
+        render={
+          <Button variant="primary" size="sm" leading={<PackagePlus />}>
+            {t("newDrop")}
+          </Button>
+        }
+      />
+      <DialogContent size="md">
         <form action={action}>
           <DialogHeader>
             <DialogTitle>{t("newDropDialog.title")}</DialogTitle>
@@ -44,9 +47,10 @@ export function NewDropDialog({ parent, owner }: { parent: string; owner?: numbe
           </DialogHeader>
           <input type="hidden" name="parent" value={parent} />
           {owner ? <input type="hidden" name="owner" value={owner} /> : null}
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="new-drop-name">{t("newDropDialog.nameLabel")}</Label>
+          {/* Five fields plus a dropzone is past what a Dialog holds without
+              scrolling (§13), so the middle region scrolls instead of the page. */}
+          <DialogBody className="grid gap-4 py-4">
+            <FormField label={t("newDropDialog.nameLabel")}>
               <Input
                 id="new-drop-name"
                 name="name"
@@ -54,38 +58,33 @@ export function NewDropDialog({ parent, owner }: { parent: string; owner?: numbe
                 required
                 autoFocus
               />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="new-drop-title">{t("newDropDialog.titleLabel")}</Label>
+            </FormField>
+            <FormField label={t("newDropDialog.titleLabel")}>
               <Input id="new-drop-title" name="title" placeholder={t("newDropDialog.titlePlaceholder")} />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="new-drop-visibility">{t("newDropDialog.visibilityLabel")}</Label>
+            </FormField>
+            <FormField label={t("newDropDialog.visibilityLabel")}>
               <Select name="visibility" defaultValue="public">
-                <SelectTrigger id="new-drop-visibility" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="private">{t("newDropDialog.visibilityPrivate")}</SelectItem>
-                  <SelectItem value="unlisted">{t("newDropDialog.visibilityUnlisted")}</SelectItem>
-                  <SelectItem value="public">{t("newDropDialog.visibilityPublic")}</SelectItem>
-                </SelectContent>
+                <SelectItem value="private">{t("newDropDialog.visibilityPrivate")}</SelectItem>
+                <SelectItem value="unlisted">{t("newDropDialog.visibilityUnlisted")}</SelectItem>
+                <SelectItem value="public">{t("newDropDialog.visibilityPublic")}</SelectItem>
               </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="new-drop-entrypoint">{t("newDropDialog.entrypointLabel")}</Label>
-              <Input id="new-drop-entrypoint" name="entrypoint" placeholder={t("newDropDialog.entrypointPlaceholder")} />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="new-drop-files">{t("newDropDialog.filesLabel")}</Label>
+            </FormField>
+            <FormField label={t("newDropDialog.entrypointLabel")}>
+              <Input
+                id="new-drop-entrypoint"
+                name="entrypoint"
+                placeholder={t("newDropDialog.entrypointPlaceholder")}
+              />
+            </FormField>
+            <FormField label={t("newDropDialog.filesLabel")}>
               <Dropzone id="new-drop-files" name="files" />
-            </div>
-          </div>
+            </FormField>
+          </DialogBody>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               {tc("cancel")}
             </Button>
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" variant="primary" loading={pending}>
               {tc("create")}
             </Button>
           </DialogFooter>

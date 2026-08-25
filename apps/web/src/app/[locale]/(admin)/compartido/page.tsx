@@ -1,17 +1,20 @@
 import { getTranslations } from "next-intl/server";
-import { requireUser } from "@/lib/session";
-import { api } from "@/lib/api";
-import { AdminLayout } from "@/components/admin-layout";
-import { Icon } from "@/components/icon";
-import { Badge } from "@/components/ui/badge";
+import { Users } from "lucide-react";
 import {
+  Badge,
+  EmptyState,
+  RoleBadge,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
+} from "@foundathyon/community-ui";
+import { requireUser } from "@/lib/session";
+import { api } from "@/lib/api";
+import { AdminLayout } from "@/components/admin-layout";
+import { FinderIcon } from "@/components/finder-icon";
 import { Link } from "@/i18n/navigation";
 import { formatDate } from "@/lib/format";
 import { sharedNodeHref } from "./link-target";
@@ -24,55 +27,48 @@ export default async function SharedWithMePage() {
   return (
     <AdminLayout user={user} section="shared">
       {nodes.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed py-16 text-muted-foreground">
-          <Icon name="users" className="size-8" />
-          <p>{t("empty")}</p>
-          <p className="text-sm text-muted-foreground">{t("emptyHint")}</p>
-        </div>
+        <EmptyState icon={Users} title={t("empty")} description={t("emptyHint")} />
       ) : (
-        <div className="overflow-x-auto rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("nameHeader")}</TableHead>
-                <TableHead>{t("typeHeader")}</TableHead>
-                <TableHead>{t("ownerHeader")}</TableHead>
-                <TableHead>{t("accessHeader")}</TableHead>
-                <TableHead>{t("sharedHeader")}</TableHead>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t("nameHeader")}</TableHead>
+              <TableHead>{t("typeHeader")}</TableHead>
+              <TableHead>{t("ownerHeader")}</TableHead>
+              <TableHead>{t("accessHeader")}</TableHead>
+              <TableHead>{t("sharedHeader")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {nodes.map((node) => (
+              <TableRow key={node.path} interactive>
+                <TableCell>
+                  <Link
+                    href={sharedNodeHref(node.kind, node.path, node.owner)}
+                    className="flex items-center gap-2.5"
+                  >
+                    <FinderIcon kind={node.kind} name={node.name} size={22} />
+                    {node.name}
+                  </Link>
+                </TableCell>
+                <TableCell>
+                  <Badge variant="outline" tone="neutral">
+                    {t(node.kind === "drop" ? "dropBadge" : "folderBadge")}
+                  </Badge>
+                </TableCell>
+                <TableCell title={node.owner_email}>{node.owner_name}</TableCell>
+                <TableCell>
+                  {/* roleTone already reads "editor" as an ordinary participant
+                      and "viewer" as passive, which is exactly this ladder. */}
+                  <RoleBadge role={node.access === "editor" ? "editor" : "viewer"}>
+                    {t(node.access === "editor" ? "editorBadge" : "viewerBadge")}
+                  </RoleBadge>
+                </TableCell>
+                <TableCell>{formatDate(node.shared_at)}</TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {nodes.map((node) => (
-                <TableRow key={node.path}>
-                  <TableCell>
-                    <Link
-                      href={sharedNodeHref(node.kind, node.path, node.owner)}
-                      className="flex items-center gap-2"
-                    >
-                      <Icon
-                        name={node.kind === "drop" ? "package" : "folder"}
-                        className="size-4 text-muted-foreground"
-                      />
-                      {node.name}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={node.kind === "drop" ? "default" : "secondary"}>
-                      {t(node.kind === "drop" ? "dropBadge" : "folderBadge")}
-                    </Badge>
-                  </TableCell>
-                  <TableCell title={node.owner_email}>{node.owner_name}</TableCell>
-                  <TableCell>
-                    <Badge variant={node.access === "editor" ? "secondary" : "outline"}>
-                      {t(node.access === "editor" ? "editorBadge" : "viewerBadge")}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{formatDate(node.shared_at)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+            ))}
+          </TableBody>
+        </Table>
       )}
     </AdminLayout>
   );

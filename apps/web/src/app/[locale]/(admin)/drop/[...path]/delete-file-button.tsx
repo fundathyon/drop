@@ -1,8 +1,8 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/icon";
+import { Trash2 } from "lucide-react";
+import { IconButton } from "@foundathyon/community-ui";
 import { ConfirmAction } from "@/components/confirm-action";
 import { deleteFileAction } from "./actions";
 
@@ -20,9 +20,11 @@ export function DeleteFileButton({
   return (
     <ConfirmAction
       trigger={
-        <Button variant="ghost" size="icon" aria-label={t("files.deleteAriaLabel", { name })}>
-          <Icon name="trash-2" className="size-4" />
-        </Button>
+        <IconButton
+          variant="destructive-subtle"
+          icon={Trash2}
+          label={t("files.deleteAriaLabel", { name })}
+        />
       }
       title={t("files.deleteTitle")}
       description={t("files.deleteDescription", { name })}

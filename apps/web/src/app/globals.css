@@ -1,45 +1,41 @@
 @import "tailwindcss";
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
+@import "@foundathyon/community-ui/theme.css";
 
-@custom-variant dark (&:is(.dark *));
+/* theme.css does `--color-*: initial`, so Tailwind's palette is exactly the
+ * semantic set it defines (bg, surface, text, text-muted, accent, danger…).
+ * Anything this app needs on top has to be re-registered here, after it. */
+
+/* The design system is dark-first: `:root` IS dark, and light is what gets
+ * opted into — either explicitly via `data-fdn-theme="light"`, or by the OS
+ * when no explicit choice is stored (ThemeScript removes the attribute for
+ * "system"). This variant mirrors that rule exactly, so `light:` here means
+ * the same thing it means one layer down in tokens.css. There is deliberately
+ * no `dark:` counterpart: components must not branch on theme — the tokens
+ * already swap. The one legitimate use is art that changes shape, not color,
+ * like the sun/moon pair in the theme toggle. */
+@custom-variant light {
+  &:where([data-fdn-theme="light"], [data-fdn-theme="light"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: light) {
+    &:where(
+        :root:not([data-fdn-theme="dark"]):not([data-fdn-theme="light"]),
+        :root:not([data-fdn-theme="dark"]):not([data-fdn-theme="light"]) *
+      ) {
+      @slot;
+    }
+  }
+}
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --color-success: var(--success);
+
+  /* Per-filetype accents, used by the Finder-style icons (lib/filetype.ts
+   * names them; components/finder-icon.tsx paints them). Their job is to make
+   * a file recognizable at a glance by kind, which is why they are a palette
+   * of their own and not the product accent — the accent means identity and
+   * action, never category. */
   --color-ft-orange: var(--ft-orange);
   --color-ft-sky: var(--ft-sky);
   --color-ft-yellow: var(--ft-yellow);
@@ -50,49 +46,10 @@
   --color-ft-violet: var(--ft-violet);
   --color-ft-emerald: var(--ft-emerald);
   --color-ft-red: var(--ft-red);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --color-ft-neutral: var(--ft-neutral);
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-  --success: oklch(0.55 0.14 155);
   --ft-orange: oklch(0.7 0.19 45);
   --ft-sky: oklch(0.69 0.15 233);
   --ft-yellow: oklch(0.79 0.16 86);
@@ -103,51 +60,556 @@
   --ft-violet: oklch(0.61 0.22 293);
   --ft-emerald: oklch(0.7 0.15 162);
   --ft-red: oklch(0.64 0.21 25);
+  --ft-neutral: var(--fdn-text-muted);
+
+  /* macOS-style folder art. Two stops, lighter at the top, exactly like the
+   * Finder icon — the tab reuses the top stop so the fold reads as one solid
+   * object rather than two shapes. */
+  --finder-folder-top: oklch(0.82 0.11 232);
+  --finder-folder-body: oklch(0.68 0.15 245);
+  --finder-folder-edge: oklch(0.6 0.16 248);
+
+  /* Document art: the paper, its border, and the folded corner's shadow. */
+  --finder-paper: oklch(0.99 0.002 250);
+  --finder-paper-edge: oklch(0.87 0.01 250);
+  --finder-fold: oklch(0.93 0.008 250);
+  --finder-rule: oklch(0.87 0.012 250);
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
-  --success: oklch(0.72 0.15 158);
+/* Dark is design-first in this design system (§ theme), so the art gets its
+ * own dark values instead of being dimmed: a folder that just loses lightness
+ * reads as disabled, not as a folder at night. */
+:root[data-fdn-theme="dark"] {
+  --finder-folder-top: oklch(0.7 0.12 233);
+  --finder-folder-body: oklch(0.55 0.15 248);
+  --finder-folder-edge: oklch(0.48 0.14 250);
+
+  --finder-paper: oklch(0.9 0.006 250);
+  --finder-paper-edge: oklch(0.74 0.012 250);
+  --finder-fold: oklch(0.8 0.01 250);
+  --finder-rule: oklch(0.78 0.014 250);
 }
 
 @layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
   html {
-    @apply font-sans;
+    font-family: var(--font-sans);
   }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Accent catalog                                                         */
+/*                                                                        */
+/* Each block redefines only the three numbers community-ui derives every */
+/* accent token from (§02: a product is a hue, not a hex) — accent-solid,  */
+/* its hover/active stops, accent-text, the washes and the focus ring all  */
+/* fall out of them, so switching `data-accent` on <html> repaints the     */
+/* whole app including the login screen.                                  */
+/*                                                                        */
+/* Every pair below was calibrated the way the DS requires: the highest L  */
+/* that still puts accent-solid at >= 5:1 against white, lowering C (never */
+/* L) for the hues that cannot hold 0.17 of chroma inside sRGB. The list   */
+/* and its labels live in lib/accents.ts; the values live only here.       */
+/* ---------------------------------------------------------------------- */
+
+[data-accent="red"]     { --fdn-accent-hue: 25;  --fdn-accent-l: 0.563; --fdn-accent-c: 0.17;  }
+[data-accent="orange"]  { --fdn-accent-hue: 45;  --fdn-accent-l: 0.558; --fdn-accent-c: 0.16;  }
+[data-accent="amber"]   { --fdn-accent-hue: 70;  --fdn-accent-l: 0.549; --fdn-accent-c: 0.12;  }
+[data-accent="lime"]    { --fdn-accent-hue: 130; --fdn-accent-l: 0.532; --fdn-accent-c: 0.145; }
+[data-accent="emerald"] { --fdn-accent-hue: 162; --fdn-accent-l: 0.528; --fdn-accent-c: 0.115; }
+[data-accent="teal"]    { --fdn-accent-hue: 185; --fdn-accent-l: 0.531; --fdn-accent-c: 0.09;  }
+[data-accent="cyan"]    { --fdn-accent-hue: 210; --fdn-accent-l: 0.534; --fdn-accent-c: 0.09;  }
+[data-accent="sky"]     { --fdn-accent-hue: 233; --fdn-accent-l: 0.537; --fdn-accent-c: 0.11;  }
+/* Drop's own identity, and therefore the default: calibrated from the brand
+ * blue #3D5AFE with a little more contrast headroom (6.03:1) than the 5:1
+ * floor the rest of the wheel sits exactly on. Keep in sync with DROP_ACCENT
+ * in app/[locale]/layout.tsx, which carries the same numbers for SSR. */
+[data-accent="blue"]    { --fdn-accent-hue: 260; --fdn-accent-l: 0.505; --fdn-accent-c: 0.17;  }
+[data-accent="indigo"]  { --fdn-accent-hue: 275; --fdn-accent-l: 0.553; --fdn-accent-c: 0.17;  }
+[data-accent="violet"]  { --fdn-accent-hue: 293; --fdn-accent-l: 0.559; --fdn-accent-c: 0.17;  }
+[data-accent="purple"]  { --fdn-accent-hue: 312; --fdn-accent-l: 0.562; --fdn-accent-c: 0.17;  }
+[data-accent="magenta"] { --fdn-accent-hue: 330; --fdn-accent-l: 0.564; --fdn-accent-c: 0.17;  }
+[data-accent="pink"]    { --fdn-accent-hue: 355; --fdn-accent-l: 0.565; --fdn-accent-c: 0.17;  }
+
+/* ---------------------------------------------------------------------- */
+/* Onboarding / login / invitation                                        */
+/*                                                                        */
+/* The first-run screens, ported from dokgistry (apps/web/app/globals.css) */
+/* so every Community product's sign-in reads as the same product family.  */
+/* Two deliberate differences from the original:                          */
+/*                                                                        */
+/*  1. Where dokgistry hardcodes its orange (#f97316) and its dark greys,  */
+/*     this derives everything from the design system's own tokens. That   */
+/*     is what makes the accent picker repaint the login too, and what     */
+/*     keeps the screens honest when the palette moves.                    */
+/*  2. It is NOT forced to dark. dokgistry pins `color-scheme: dark` on    */
+/*     the shell; here light is a first-class theme (§H-09 — one theme     */
+/*     for the whole app, login included), so the surfaces are tokens.     */
+/* ---------------------------------------------------------------------- */
+
+.onboarding {
+  --onb-accent: var(--fdn-accent-solid);
+  --onb-accent-hover: var(--fdn-accent-solid-hover);
+  --onb-accent-fg: var(--fdn-accent-on-solid);
+  --onb-accent-text: var(--fdn-accent-text);
+  --onb-wash: color-mix(in oklch, var(--fdn-accent-solid) 14%, transparent);
+  --onb-glow: color-mix(in oklch, var(--fdn-accent-solid) 45%, transparent);
+
+  min-height: 100vh;
+  display: flex;
+  background: var(--fdn-bg);
+  color: var(--fdn-text);
+}
+
+.onboardingBranding {
+  position: relative;
+  display: none;
+  overflow: hidden;
+  width: 50%;
+  padding: 3rem;
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--fdn-accent-solid) 22%, transparent),
+    var(--fdn-bg) 55%,
+    var(--fdn-bg)
+  );
+}
+
+.orb {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(64px);
+  background: color-mix(in oklch, var(--fdn-accent-solid) 10%, transparent);
+  pointer-events: none;
+}
+
+.orbTopRight {
+  top: -6rem;
+  right: -6rem;
+  width: 18rem;
+  height: 18rem;
+}
+
+.orbBottomLeft {
+  bottom: -8rem;
+  left: -5rem;
+  width: 20rem;
+  height: 20rem;
+}
+
+.orbRing {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 30rem;
+  height: 30rem;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklch, var(--fdn-accent-solid) 12%, transparent);
+  pointer-events: none;
+}
+
+.orbitGlow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  width: 28rem;
+  height: 28rem;
+  border-radius: 999px;
+  filter: blur(40px);
+  background: conic-gradient(from 0deg, transparent 0%, var(--onb-glow) 10%, transparent 30%, transparent 100%);
+  animation: onboarding-spin-slow 14s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes onboarding-spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orbitGlow { animation: none; }
+}
+
+.onboardingBrandingContent {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 2rem;
+}
+
+.brandRow {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.onboardingFormPane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.5rem;
+}
+
+.onboardingFormCard {
+  width: 100%;
+  max-width: 26rem;
+}
+
+.onboardingCard {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  border: 1px solid var(--fdn-border);
+  border-radius: 1rem;
+  background: var(--fdn-surface);
+}
+
+.onboardingCard h2 {
+  font-size: 1.25rem;
+  margin: 0.75rem 0 0;
+}
+
+.brandMark {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.brandMarkMobile {
+  display: flex;
+  margin-bottom: 2rem;
+}
+
+.brandLogo {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.625rem;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--onb-accent);
+  color: var(--onb-accent-fg);
+}
+
+.brandIcon { width: 1.375rem; height: 1.375rem; }
+
+.brandName {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.pillBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  width: fit-content;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  background: var(--onb-wash);
+  color: var(--onb-accent-text);
+  font-size: 0.6875rem;
+  font-weight: 500;
+}
+
+.pillBadge svg { width: 0.75rem; height: 0.75rem; }
+
+.pillBadgeAccent {
+  gap: 0.375rem;
+  margin-bottom: 0.25rem;
+}
+
+.onboardingHeadline { max-width: 26rem; }
+
+.onboardingHeadline h1 {
+  margin: 0;
+  font-size: 2rem;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.brandTagline {
+  margin: 0.75rem 0 0;
+  color: var(--fdn-text-secondary);
+  font-size: 0.875rem;
+  max-width: 20rem;
+}
+
+.featureList {
+  list-style: none;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.featureList li {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  font-size: 0.8125rem;
+  color: var(--fdn-text);
+}
+
+.featureCheck {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  background: var(--onb-wash);
+  color: var(--onb-accent-text);
+  flex-shrink: 0;
+}
+
+.featureCheck svg { width: 0.7rem; height: 0.7rem; }
+
+.onboardingFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.6875rem;
+  color: var(--fdn-text-muted);
+}
+
+.onboardingSubtitle {
+  margin: 0.375rem 0 0;
+  color: var(--fdn-text-secondary);
+  font-size: 0.8125rem;
+}
+
+.onboardingForm {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.field label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.fieldHint {
+  margin: -0.125rem 0 0;
+  font-size: 0.6875rem;
+  color: var(--fdn-text-muted);
+}
+
+/* No .stepDots/.stepDot here: dokgistry's onboarding is a three-step wizard
+ * and Drop's is a single screen, so the dots would be dead weight. .stepCaption
+ * survives because both first-run screens end on a small muted line. */
+.stepCaption {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+  color: var(--fdn-text-muted);
+}
+
+.inputIconWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.inputIcon {
+  position: absolute;
+  left: 0.625rem;
+  width: 0.875rem;
+  height: 0.875rem;
+  color: var(--fdn-text-muted);
+  pointer-events: none;
+}
+
+.field input.hasTrailingIcon { padding-right: 2rem; }
+
+.inputTrailingButton {
+  position: absolute;
+  right: 0.125rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: none;
+  border-radius: 0.375rem;
+  background: transparent;
+  color: var(--fdn-text-muted);
+  cursor: pointer;
+}
+
+.inputTrailingButton svg { width: 0.875rem; height: 0.875rem; }
+.inputTrailingButton:hover { color: var(--fdn-text); }
+
+.checkboxField {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--fdn-text-muted);
+  cursor: pointer;
+}
+
+.checkboxField input[type="checkbox"] {
+  width: 0.875rem;
+  height: 0.875rem;
+  accent-color: var(--onb-accent);
+  cursor: pointer;
+}
+
+.field input {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 1.75rem;
+  padding: 0 0.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--fdn-border-strong);
+  background: var(--fdn-bg);
+  color: inherit;
+  font-size: 0.75rem;
+  font-family: inherit;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.inputIconWrap input { padding-left: 2rem; }
+.field input::placeholder { color: var(--fdn-text-muted); }
+
+.field input:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--fdn-bg), 0 0 0 4px var(--fdn-focus);
+}
+
+.field input:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.onboardingError {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-radius: 0.625rem;
+  background: var(--fdn-danger-bg);
+  border: 1px solid var(--fdn-danger-border);
+  color: var(--fdn-danger-text);
+  font-size: 0.875rem;
+}
+
+.onboardingNotice {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-radius: 0.625rem;
+  background: var(--fdn-success-bg);
+  border: 1px solid var(--fdn-success-border);
+  color: var(--fdn-success-text);
+  font-size: 0.875rem;
+}
+
+.buttonPrimary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  height: 1.75rem;
+  padding: 0 0.875rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: var(--onb-accent);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  color: var(--onb-accent-fg);
+  font-weight: 600;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 150ms ease, box-shadow 150ms ease, transform 150ms ease, opacity 150ms ease;
+}
+
+.buttonIcon { width: 0.875rem; height: 0.875rem; flex-shrink: 0; }
+
+.buttonPrimary:hover:not(:disabled) { background: var(--onb-accent-hover); }
+.buttonPrimary:active:not(:disabled) { transform: translateY(1px); }
+
+.buttonPrimary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--onb-accent-text), 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+
+.buttonPrimary:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+  cursor: default;
+}
+
+.buttonGhost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.75rem;
+  padding: 0 0.5rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--fdn-text-muted);
+  font-weight: 600;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.buttonGhost:hover:not(:disabled) {
+  background: var(--fdn-surface-hover);
+  color: var(--fdn-text);
+}
+
+.buttonGhost:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+  cursor: default;
+}
+
+.onboardingNav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.onboardingNav > .buttonPrimary:only-child { margin-left: auto; }
+
+@media (min-width: 1024px) {
+  .onboardingBranding { display: flex; }
+  .brandMarkMobile { display: none; }
+}
+
+/* A swatch that shows the accent of the `[data-accent]` block it sits in,
+ * rather than the page's current accent — what the picker's dots and the wheel
+ * on /colores need.
+ *
+ * `bg-accent-solid` cannot do this. `--fdn-accent-solid` is declared once, on
+ * :root, as `oklch(var(--fdn-accent-l) …)`, and a custom property's var()
+ * references are substituted where the DECLARATION lives; what inherits down
+ * is the already-resolved color. Overriding the hue on a descendant therefore
+ * never reaches it. Re-deriving from the three variables here does, because
+ * the substitution then happens on this element. */
+.accentSwatch {
+  background: oklch(var(--fdn-accent-l) var(--fdn-accent-c) var(--fdn-accent-hue));
 }

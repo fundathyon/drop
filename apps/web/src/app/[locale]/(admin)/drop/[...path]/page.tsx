@@ -1,20 +1,23 @@
 import { getTranslations } from "next-intl/server";
-import { requireUser } from "@/lib/session";
-import { api } from "@/lib/api";
-import { AdminLayout, type Crumb } from "@/components/admin-layout";
-import { Icon } from "@/components/icon";
-import { FileIcon } from "@/components/file-icon";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Download, ExternalLink, FileText, Lock } from "lucide-react";
 import {
+  Alert,
+  Badge,
+  EmptyState,
+  Heading,
+  Icon,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
+} from "@foundathyon/community-ui";
+import { requireUser } from "@/lib/session";
+import { api } from "@/lib/api";
+import { AdminLayout, type Crumb } from "@/components/admin-layout";
+import { FileIcon } from "@/components/file-icon";
+import { LinkButton } from "@/components/link-button";
 import { decodePathSegments, formatDate, formatSize, joinPath } from "@/lib/format";
 import { typeOf } from "@/lib/filetype";
 import { CopyButton } from "./copy-button";
@@ -98,17 +101,22 @@ export default async function DropPage({
     >
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-lg font-semibold">{t("title")}</h1>
-          <Badge variant="secondary">v{detail.meta.version}</Badge>
-          <Badge variant="secondary">{detail.meta.visibility}</Badge>
+          <Heading level={1}>{t("title")}</Heading>
+          <Badge variant="outline" tone="neutral">
+            v{detail.meta.version}
+          </Badge>
+          <Badge variant="tonal" tone="neutral">
+            {detail.meta.visibility}
+          </Badge>
         </div>
 
         {!detail.entrypoint_missing && (
           <div className="flex min-w-0 items-center gap-2 text-sm">
             <span title={detail.meta.visibility === "private" ? t("openTitleLocked") : t("openTitleExternal")}>
               <Icon
-                name={detail.meta.visibility === "private" ? "lock" : "external-link"}
-                className="size-4 shrink-0 text-muted-foreground"
+                icon={detail.meta.visibility === "private" ? Lock : ExternalLink}
+                size={14}
+                className="text-text-muted shrink-0"
               />
             </span>
             <a
@@ -123,97 +131,135 @@ export default async function DropPage({
           </div>
         )}
 
+        {/* Alert owns its icon per tone (§07), so these notices only supply the
+            first line as the title and the second as the body. */}
         {detail.meta.visibility === "private" && !detail.entrypoint_missing && (
-          <Alert>
-            <Icon name="lock" className="size-4" />
-            <AlertDescription>
-              <p>{t.rich("notices.privateLine1", { b: (chunks) => <strong>{chunks}</strong> })}</p>
-              <p>
-                {canEdit
-                  ? t.rich("notices.privateLine2Owner", {
-                      b: (chunks) => <strong>{chunks}</strong>,
-                      code: (chunks) => <code>{chunks}</code>,
-                    })
-                  : t("notices.privateLine2Other")}
-              </p>
-            </AlertDescription>
+          <Alert
+            tone="info"
+            icon={Lock}
+            title={t.rich("notices.privateLine1", { b: (chunks) => <strong>{chunks}</strong> })}
+          >
+            {canEdit
+              ? t.rich("notices.privateLine2Owner", {
+                  b: (chunks) => <strong>{chunks}</strong>,
+                  code: (chunks) => <code>{chunks}</code>,
+                })
+              : t("notices.privateLine2Other")}
           </Alert>
         )}
 
         {detail.access !== "owner" && (
-          <Alert>
-            <Icon name="users" className="size-4" />
-            <AlertDescription>
-              <p>
-                {t.rich("notices.sharedLine1", {
-                  access:
-                    detail.access === "editor" ? t("notices.sharedAccessEditor") : t("notices.sharedAccessViewer"),
-                  b: (chunks) => <strong>{chunks}</strong>,
-                })}
-              </p>
-              <p>{detail.access === "editor" ? t("notices.sharedLine2Editor") : t("notices.sharedLine2Viewer")}</p>
-            </AlertDescription>
+          <Alert
+            tone="info"
+            title={t.rich("notices.sharedLine1", {
+              access: detail.access === "editor" ? t("notices.sharedAccessEditor") : t("notices.sharedAccessViewer"),
+              b: (chunks) => <strong>{chunks}</strong>,
+            })}
+          >
+            {detail.access === "editor" ? t("notices.sharedLine2Editor") : t("notices.sharedLine2Viewer")}
           </Alert>
         )}
 
         {detail.entrypoint_missing && (
-          <Alert variant="destructive">
-            <Icon name="triangle-alert" className="size-4" />
-            <AlertDescription>
-              {t.rich("notices.entrypointMissing", {
-                entrypoint: detail.meta.entrypoint,
-                b: (chunks) => <strong>{chunks}</strong>,
-                code: (chunks) => <code>{chunks}</code>,
-              })}
-            </AlertDescription>
-          </Alert>
+          <Alert
+            tone="danger"
+            title={t.rich("notices.entrypointMissing", {
+              entrypoint: detail.meta.entrypoint,
+              b: (chunks) => <strong>{chunks}</strong>,
+              code: (chunks) => <code>{chunks}</code>,
+            })}
+          />
         )}
 
         {detail.files.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed py-16 text-muted-foreground">
-            <Icon name="file-text" className="size-8" />
-            <p>{t("empty")}</p>
-          </div>
+          <EmptyState icon={FileText} title={t("empty")} />
         ) : (
-          <div className="overflow-x-auto rounded-lg border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("files.nameHeader")}</TableHead>
-                  <TableHead>{t("files.typeHeader")}</TableHead>
-                  <TableHead>{t("files.sizeHeader")}</TableHead>
-                  <TableHead>{t("files.modifiedHeader")}</TableHead>
-                  <TableHead />
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("files.nameHeader")}</TableHead>
+                <TableHead>{t("files.typeHeader")}</TableHead>
+                <TableHead>{t("files.sizeHeader")}</TableHead>
+                <TableHead>{t("files.modifiedHeader")}</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {detail.files.map((file) => (
+                <TableRow key={file.name} interactive>
+                  <TableCell>
+                    <a href={editHref(path, owner, file.name)} className="flex items-center gap-2">
+                      <FileIcon name={file.name} />
+                      {file.name}
+                      {file.generated && (
+                        <span title={t("files.generatedTitle")}>
+                          <Icon icon={Lock} size={12} className="text-text-muted" />
+                        </span>
+                      )}
+                    </a>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" tone="neutral">
+                      {typeOf(file.name).label}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{formatSize(file.size)}</TableCell>
+                  <TableCell>{formatDate(file.modified_at)}</TableCell>
+                  <TableCell align="right">
+                    <div className="flex justify-end gap-1">
+                      {/* A download is a navigation, so it stays an anchor
+                          wearing the button skin rather than an IconButton. */}
+                      <LinkButton
+                        href={api.fileRawPath(joinPath(path, file.name), owner)}
+                        external
+                        variant="ghost"
+                        aria-label={t("files.downloadAriaLabel", { name: file.name })}
+                      >
+                        <Download className="size-3.5" />
+                      </LinkButton>
+                      {!file.generated && canEdit && (
+                        <DeleteFileButton fullPath={joinPath(path, file.name)} owner={owner} name={file.name} />
+                      )}
+                    </div>
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+
+        {detail.versions.length > 1 && (
+          <div className="flex flex-col gap-2">
+            <Heading level={2}>{t("versions.subtitle")}</Heading>
+            <Table>
               <TableBody>
-                {detail.files.map((file) => (
-                  <TableRow key={file.name}>
+                {detail.versions.map((version) => (
+                  <TableRow key={version.seq} terminal={!version.current}>
+                    <TableCell className="font-medium">v{version.seq}</TableCell>
                     <TableCell>
-                      <a href={editHref(path, owner, file.name)} className="flex items-center gap-2">
-                        <FileIcon name={file.name} />
-                        {file.name}
-                        {file.generated && (
-                          <span title={t("files.generatedTitle")}>
-                            <Icon name="lock" className="size-3.5 text-muted-foreground" />
-                          </span>
-                        )}
-                      </a>
+                      {version.current && (
+                        <Badge variant="tonal" tone="success">
+                          {t("versions.current")}
+                        </Badge>
+                      )}
                     </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{typeOf(file.name).label}</Badge>
+                    <TableCell className="text-text-muted">
+                      {t("versions.filesCount", { count: version.files })} · {formatSize(version.size)}
                     </TableCell>
-                    <TableCell>{formatSize(file.size)}</TableCell>
-                    <TableCell>{formatDate(file.modified_at)}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button asChild variant="ghost" size="icon" aria-label={t("files.downloadAriaLabel", { name: file.name })}>
-                          <a href={api.fileRawPath(joinPath(path, file.name), owner)} target="_blank" rel="noreferrer">
-                            <Icon name="download" className="size-4" />
-                          </a>
-                        </Button>
-                        {!file.generated && canEdit && (
-                          <DeleteFileButton fullPath={joinPath(path, file.name)} owner={owner} name={file.name} />
+                    <TableCell className="text-text-muted">{formatDate(version.published_at)}</TableCell>
+                    <TableCell align="right">
+                      <div className="flex justify-end gap-2">
+                        <LinkButton
+                          href={version.url}
+                          external
+                          variant="ghost"
+                          aria-label={t("versions.viewAriaLabel", { seq: version.seq })}
+                        >
+                          <ExternalLink className="size-3.5" />
+                          {t("versions.view")}
+                        </LinkButton>
+                        {!version.current && canEdit && (
+                          <RestoreVersionButton path={path} owner={owner} seq={version.seq} />
                         )}
                       </div>
                     </TableCell>
@@ -221,41 +267,6 @@ export default async function DropPage({
                 ))}
               </TableBody>
             </Table>
-          </div>
-        )}
-
-        {detail.versions.length > 1 && (
-          <div className="flex flex-col gap-2">
-            <h2 className="text-base font-semibold">{t("versions.subtitle")}</h2>
-            <div className="overflow-x-auto rounded-lg border">
-              <Table>
-                <TableBody>
-                  {detail.versions.map((version) => (
-                    <TableRow key={version.seq}>
-                      <TableCell className="font-medium">v{version.seq}</TableCell>
-                      <TableCell>{version.current && <Badge variant="secondary">{t("versions.current")}</Badge>}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {t("versions.filesCount", { count: version.files })} · {formatSize(version.size)}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{formatDate(version.published_at)}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button asChild variant="ghost" size="sm" aria-label={t("versions.viewAriaLabel", { seq: version.seq })}>
-                            <a href={version.url} target="_blank" rel="noreferrer">
-                              <Icon name="external-link" className="size-4" />
-                              {t("versions.view")}
-                            </a>
-                          </Button>
-                          {!version.current && canEdit && (
-                            <RestoreVersionButton path={path} owner={owner} seq={version.seq} />
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
           </div>
         )}
       </div>

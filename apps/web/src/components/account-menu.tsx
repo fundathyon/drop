@@ -1,49 +1,32 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/icon";
+import { UserMenu } from "@foundathyon/community-ui";
 import { logoutAction } from "@/lib/actions/auth";
 import type { UserInfo } from "@/lib/types";
 
+// No `trigger` prop on purpose. UserMenu renders whatever it gets as the
+// CHILDREN of its own Base UI trigger button — it is not a `render`
+// substitution like DialogTrigger's — so passing a Button nests a <button>
+// inside a <button>, which is invalid HTML and breaks hydration.
+//
+// Left alone, the library draws the initials avatar the shell is supposed to
+// have (§12: an avatar-like trigger) and labels the button with the user's
+// name itself. The name and email still appear in the menu's own header, which
+// is where they belong: the trigger is an identity mark, not a nameplate.
 export function AccountMenu({ user }: { user: UserInfo }) {
   const t = useTranslations("nav");
+  const role = t(user.role === "admin" ? "roleAdmin" : "roleUser");
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" aria-label={t("accountButtonAriaLabel", { email: user.email })} className="gap-2">
-          <Icon name="user" className="size-4" />
-          <span className="hidden sm:inline">{user.name}</span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuLabel className="font-normal">
-          <div className="flex flex-col">
-            <span className="font-medium">{user.name}</span>
-            <span className="text-xs text-muted-foreground">
-              {t("accountRoleLabel", { email: user.email, role: t(user.role === "admin" ? "roleAdmin" : "roleUser") })}
-            </span>
-          </div>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild variant="destructive">
-          <form action={logoutAction} className="w-full">
-            <button type="submit" className="flex w-full items-center gap-2">
-              <Icon name="log-out" className="size-4" />
-              {t("signOut")}
-            </button>
-          </form>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <UserMenu
+      name={user.name}
+      email={t("accountRoleLabel", { email: user.email, role })}
+      signOutLabel={t("signOut")}
+      // logoutAction is a Server Action that clears the session cookie and
+      // redirects; calling it directly is enough — there is no <form> here
+      // because UserMenu owns the item's markup.
+      onSignOut={() => void logoutAction()}
+    />
   );
 }

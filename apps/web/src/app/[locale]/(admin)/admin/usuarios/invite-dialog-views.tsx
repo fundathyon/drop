@@ -9,12 +9,19 @@
 // @/lib/session) that the real action file pulls in.
 import { useState } from "react";
 import { useTranslations } from "next-intl";
-import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Icon } from "@/components/icon";
+import { Copy } from "lucide-react";
+import {
+  Alert,
+  Button,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  FormField,
+  Input,
+  Select,
+  SelectItem,
+} from "@foundathyon/community-ui";
 import type { InvitationActionState } from "./actions";
 
 export function InviteForm({
@@ -38,14 +45,12 @@ export function InviteForm({
         <DialogDescription>{t("inviteDialog.description")}</DialogDescription>
       </DialogHeader>
       {error && (
-        <p role="alert" className="flex items-center gap-2 pt-3 text-sm text-destructive">
-          <Icon name="triangle-alert" className="size-4 shrink-0" />
-          {t(`inviteDialog.error.${error}`)}
-        </p>
+        <div className="pt-3">
+          <Alert tone="danger" title={t(`inviteDialog.error.${error}`)} />
+        </div>
       )}
       <div className="grid gap-4 py-4">
-        <div className="grid gap-2">
-          <Label htmlFor="invite-email">{t("inviteDialog.emailLabel")}</Label>
+        <FormField label={t("inviteDialog.emailLabel")}>
           <Input
             id="invite-email"
             name="email"
@@ -54,25 +59,19 @@ export function InviteForm({
             required
             autoFocus
           />
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor="invite-role">{t("inviteDialog.roleLabel")}</Label>
+        </FormField>
+        <FormField label={t("inviteDialog.roleLabel")}>
           <Select name="role" defaultValue="user">
-            <SelectTrigger id="invite-role" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="user">{t("inviteDialog.roleUser")}</SelectItem>
-              <SelectItem value="admin">{t("inviteDialog.roleAdmin")}</SelectItem>
-            </SelectContent>
+            <SelectItem value="user">{t("inviteDialog.roleUser")}</SelectItem>
+            <SelectItem value="admin">{t("inviteDialog.roleAdmin")}</SelectItem>
           </Select>
-        </div>
+        </FormField>
       </div>
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel}>
+        <Button type="button" variant="ghost" onClick={onCancel}>
           {tc("cancel")}
         </Button>
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" variant="primary" loading={pending}>
           {t("inviteDialog.submit")}
         </Button>
       </DialogFooter>
@@ -98,14 +97,13 @@ export function InviteLinkReveal({ link, onClose }: { link: string; onClose: () 
         <DialogDescription>{t("inviteDialog.linkDescription")}</DialogDescription>
       </DialogHeader>
       <div className="flex items-center gap-2 py-4">
-        <Input readOnly aria-label={t("inviteDialog.linkAriaLabel")} value={link} />
-        <Button type="button" variant="outline" onClick={copyLink}>
-          <Icon name="copy" className="size-4" />
+        <Input readOnly aria-label={t("inviteDialog.linkAriaLabel")} value={link} wrapperClassName="flex-1" />
+        <Button type="button" variant="secondary" onClick={copyLink} leading={<Copy />}>
           {copied ? t("inviteDialog.copied") : t("inviteDialog.copy")}
         </Button>
       </div>
       <DialogFooter>
-        <Button type="button" onClick={onClose}>
+        <Button type="button" variant="primary" onClick={onClose}>
           {tc("close")}
         </Button>
       </DialogFooter>

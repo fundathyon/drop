@@ -10,9 +10,9 @@ import {
   File,
   FileArchive,
   FileCode,
+  FileCog,
   FileImage,
   FileJson,
-  FileCog,
   FileText,
   FileType,
   Folder,
@@ -39,11 +39,13 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import { Icon as FdnIcon, type IconProps as FdnIconProps } from "@foundathyon/community-ui";
 
-// Mirrors api/internal/adminui/icons.go: the same lucide-react icon set,
-// referenced by the same names, so a page just names an icon instead of
-// importing it directly.
-const icons: Record<string, LucideIcon> = {
+// A name → component registry over the design system's Icon. The DS is what
+// actually renders (one stroke width, one size scale, currentColor); this only
+// spares ~40 call sites an import each, and keeps the icon set closed so a
+// page can't reach for a glyph nobody vetted.
+const icons = {
   package: Package,
   folder: Folder,
   "folder-plus": FolderPlus,
@@ -82,10 +84,20 @@ const icons: Record<string, LucideIcon> = {
   copy: Copy,
   eye: Eye,
   "eye-off": EyeOff,
-};
+} satisfies Record<string, LucideIcon>;
 
-export function Icon({ name, className }: { name: string; className?: string }) {
-  const Component = icons[name];
-  if (!Component) return null;
-  return <Component className={className} aria-hidden="true" />;
+export type IconName = keyof typeof icons;
+
+export function Icon({
+  name,
+  size,
+  label,
+  className,
+}: {
+  name: IconName;
+  size?: FdnIconProps["size"];
+  label?: string;
+  className?: string;
+}) {
+  return <FdnIcon icon={icons[name]} size={size} label={label} className={className} />;
 }

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Drop">
+  <title>Drop</title>
+  <rect width="128" height="128" rx="28" fill="#F97316" />
+  <g transform="translate(64 64) scale(0.96) translate(-60.75 -69)" fill="#000000">
+    <!-- waveform bars -->
+    <rect x="14" y="30" width="15" height="50" rx="7.5" />
+    <rect x="37" y="14" width="15" height="74" rx="7.5" />
+    <rect x="60" y="34" width="15" height="40" rx="7.5" />
+    <rect x="83" y="22" width="15" height="48" rx="7.5" />
+    <!-- droplet -->
+    <path d="M90.5 78
+             C95.6 90.9 107.5 101.9 107.5 107
+             A17 17 0 1 1 73.5 107
+             C73.5 101.9 85.4 90.9 90.5 78Z" />
+  </g>
+</svg>

@@ -1,5 +1,4 @@
 import { api, ApiError } from "@/lib/api";
-import { AuthShell } from "@/components/auth-shell";
 import type { InvitationInfo } from "@/lib/types";
 import { InviteForm } from "./invite-form";
 
@@ -21,9 +20,5 @@ export default async function InvitationPage({
     if (!(err instanceof ApiError)) throw err;
   }
 
-  return (
-    <AuthShell>
-      <InviteForm token={token ?? ""} invitation={invitation} />
-    </AuthShell>
-  );
+  return <InviteForm token={token ?? ""} invitation={invitation} />;
 }

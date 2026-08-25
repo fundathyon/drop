@@ -2,10 +2,9 @@
 
 import { useActionState, useRef } from "react";
 import { useTranslations } from "next-intl";
-import { Textarea } from "@/components/ui/textarea";
-import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/icon";
-import { Link } from "@/i18n/navigation";
+import { Save } from "lucide-react";
+import { Alert, Button, Text, Textarea } from "@foundathyon/community-ui";
+import { LinkButton } from "@/components/link-button";
 import { formatDate, formatSize } from "@/lib/format";
 import { computeTabKeyDown } from "./tab-behavior";
 import { saveFileAction, type SaveFileState } from "./actions";
@@ -62,22 +61,14 @@ export function EditorForm({
           }
         }}
       />
-      {state?.error && (
-        <p role="alert" className="flex items-center gap-2 text-sm text-destructive">
-          <Icon name="triangle-alert" className="size-4 shrink-0" />
-          {t(`error.${state.error}`)}
-        </p>
-      )}
-      <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
-        <span>
+      {state?.error && <Alert tone="danger" title={t(`error.${state.error}`)} />}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Text variant="body-sm" tone="muted" tabular>
           {type.label} · {formatSize(file.size)} · {formatDate(file.modified_at)}
-        </span>
+        </Text>
         <div className="flex items-center gap-2">
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/drop/${path}${owner ? `?owner=${owner}` : ""}`}>{tc("cancel")}</Link>
-          </Button>
-          <Button type="submit" size="sm" disabled={pending}>
-            <Icon name="save" className="size-4" />
+          <LinkButton href={`/drop/${path}${owner ? `?owner=${owner}` : ""}`}>{tc("cancel")}</LinkButton>
+          <Button type="submit" variant="primary" size="sm" loading={pending} leading={<Save />}>
             {pending ? tc("saving") : tc("save")}
           </Button>
         </div>

@@ -1,8 +1,8 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/icon";
+import { Trash2 } from "lucide-react";
+import { Button } from "@foundathyon/community-ui";
 import { ConfirmAction } from "@/components/confirm-action";
 import { deleteDropAction } from "./actions";
 
@@ -12,8 +12,9 @@ export function DeleteDropButton({ path, owner }: { path: string; owner?: number
   return (
     <ConfirmAction
       trigger={
-        <Button variant="destructive" size="sm">
-          <Icon name="trash-2" className="size-4" />
+        // destructive-subtle, not destructive: §09 reserves the solid
+        // destructive button for the final confirmation inside the dialog.
+        <Button variant="destructive-subtle" size="sm" leading={<Trash2 />}>
           {t("deleteDrop.trigger")}
         </Button>
       }

@@ -14,23 +14,25 @@ export interface SetupState {
 // there is no session to check.
 export async function setupAction(_prev: SetupState | undefined, formData: FormData): Promise<SetupState> {
   const orgName = String(formData.get("org_name") ?? "").trim();
-  const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
-  const passwordConfirm = String(formData.get("password_confirm") ?? "");
   const locale = await getLocale();
-
-  if (password !== passwordConfirm) {
-    return { error: "passwordMismatch" };
-  }
 
   try {
     const tokens = await api.setup({
       org_name: orgName,
-      name: name || undefined,
+      // `name` is left out on purpose: the wizard no longer asks for it and the
+      // Go side falls back to the local part of the email
+      // (auth.Service.SetupInstance), which is a better default than an empty
+      // string anyway.
+      //
+      // `password_confirm` is still sent because the endpoint requires the
+      // field and rejects a mismatch — but the form asks for the password once,
+      // so there is nothing to compare and echoing it is the honest way to
+      // satisfy a contract the UI no longer participates in.
       email,
       password,
-      password_confirm: passwordConfirm,
+      password_confirm: password,
     });
     await setSession(tokens);
   } catch (err) {

@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@foundathyon/community-ui";
 import { InviteForm, InviteLinkReveal } from "../invite-dialog-views";
 
 // InviteForm and InviteLinkReveal are the two halves of the invite dialog's

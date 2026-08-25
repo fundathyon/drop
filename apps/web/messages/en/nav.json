@@ -6,7 +6,6 @@
     "home": "Home",
     "routeAriaLabel": "Route",
     "themeToggleAriaLabel": "Toggle theme",
-    "accountButtonAriaLabel": "Account for {email}",
     "accountRoleLabel": "{email} · {role}",
     "manageUsers": "Users and invitations",
     "signOut": "Sign out",

@@ -1,8 +1,8 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/icon";
+import { Trash2 } from "lucide-react";
+import { IconButton } from "@foundathyon/community-ui";
 import { ConfirmAction } from "@/components/confirm-action";
 import { deleteNodeAction } from "./actions";
 import type { Kind } from "@/lib/types";
@@ -22,11 +22,7 @@ export function DeleteNodeButton({
 
   return (
     <ConfirmAction
-      trigger={
-        <Button variant="ghost" size="icon" aria-label={t("deleteAriaLabel", { name })}>
-          <Icon name="trash-2" className="size-4" />
-        </Button>
-      }
+      trigger={<IconButton variant="destructive-subtle" size="sm" icon={Trash2} label={t("deleteAriaLabel", { name })} />}
       title={kind === "drop" ? t("deleteDropTitle") : t("deleteFolderTitle")}
       description={t("deleteText", { name })}
       action={() => deleteNodeAction(path, owner)}

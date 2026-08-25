@@ -58,7 +58,6 @@ const validFields = {
   org_name: "Acme",
   email: "admin@acme.test",
   password: "longenough1",
-  password_confirm: "longenough1",
 };
 
 beforeEach(() => {
@@ -67,12 +66,6 @@ beforeEach(() => {
 });
 
 describe("setupAction", () => {
-  test("rejects mismatched passwords without calling the API", async () => {
-    const result = await setupAction(undefined, form({ ...validFields, password_confirm: "different1" }));
-    expect(result.error).toBe("passwordMismatch");
-    expect(setup).not.toHaveBeenCalled();
-  });
-
   test("surfaces the API's invalid_body message verbatim", async () => {
     setup.mockImplementationOnce(async () => {
       throw new FakeApiError(422, "invalid_body", "the password must be at least 8 characters");
@@ -106,35 +99,38 @@ describe("setupAction", () => {
   test("creates the session and redirects home on success", async () => {
     let thrown: unknown;
     try {
-      await setupAction(undefined, form({ ...validFields, name: "Rafa" }));
+      await setupAction(undefined, form(validFields));
     } catch (err) {
       thrown = err;
     }
     expect((thrown as Error).message).toContain('"href":"/"');
     expect(setSession).toHaveBeenCalledTimes(1);
     expect(setSession).toHaveBeenCalledWith(fakeTokens);
+    // password_confirm echoes password: the endpoint still requires the field
+    // and rejects a mismatch, but the form asks once so there is nothing to
+    // compare. No `name` at all — the Go side derives it from the email.
     expect(setup).toHaveBeenCalledWith({
       org_name: "Acme",
-      name: "Rafa",
       email: "admin@acme.test",
       password: "longenough1",
       password_confirm: "longenough1",
     });
   });
 
-  test("omits an empty name from the request instead of sending a blank string", async () => {
-    let thrown: unknown;
+  test("never sends a display name, even if one reaches the FormData", async () => {
     try {
-      await setupAction(undefined, form(validFields));
-    } catch (err) {
-      thrown = err;
+      await setupAction(undefined, form({ ...validFields, name: "Rafa" }));
+    } catch {
+      // success redirects; the assertion below is what matters
     }
-    expect(thrown).toBeInstanceOf(Error);
-    expect(setup).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: undefined,
-      })
-    );
+    // Exact equality, not objectContaining: an extra `name` key would fail it.
+    expect(setup).toHaveBeenCalledTimes(1);
+    expect(setup).toHaveBeenCalledWith({
+      org_name: "Acme",
+      email: "admin@acme.test",
+      password: "longenough1",
+      password_confirm: "longenough1",
+    });
   });
 
   // Two successive successes must produce distinguishable state objects — not
@@ -142,8 +138,13 @@ describe("setupAction", () => {
   // still hand back a fresh object each time so a consuming dialog could tell
   // "just failed" apart from "nothing has happened yet".
   test("returns a fresh object on repeated failures", async () => {
-    const first = await setupAction(undefined, form({ ...validFields, password_confirm: "different1" }));
-    const second = await setupAction(first, form({ ...validFields, password_confirm: "different2" }));
+    setup.mockImplementation(async () => {
+      throw new Error("network is down");
+    });
+    const first = await setupAction(undefined, form(validFields));
+    const second = await setupAction(first, form(validFields));
+    setup.mockImplementation(async () => fakeTokens);
+    expect(first.error).toBe("unexpected");
     expect(first).not.toBe(second);
   });
 });

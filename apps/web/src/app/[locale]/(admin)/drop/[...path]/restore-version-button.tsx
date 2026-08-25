@@ -1,8 +1,8 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/icon";
+import { History } from "lucide-react";
+import { Button } from "@foundathyon/community-ui";
 import { ConfirmAction } from "@/components/confirm-action";
 import { activateVersionAction } from "./actions";
 
@@ -20,8 +20,7 @@ export function RestoreVersionButton({
   return (
     <ConfirmAction
       trigger={
-        <Button variant="outline" size="sm">
-          <Icon name="history" className="size-4" />
+        <Button variant="secondary" size="sm" leading={<History />}>
           {t("versions.restore")}
         </Button>
       }

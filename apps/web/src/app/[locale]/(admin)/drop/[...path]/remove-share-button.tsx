@@ -1,9 +1,8 @@
 "use client";
 
 import { useTransition } from "react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/icon";
+import { X } from "lucide-react";
+import { IconButton, useToast } from "@foundathyon/community-ui";
 import { unshareAction } from "./actions";
 
 // No ConfirmAction here on purpose — removing a share isn't destructive to
@@ -20,23 +19,23 @@ export function RemoveShareButton({
   userId: number;
   ariaLabel: string;
 }) {
+  const { toast } = useToast();
   const [pending, startTransition] = useTransition();
 
   return (
-    <Button
+    <IconButton
       type="button"
       variant="ghost"
-      size="icon-sm"
-      aria-label={ariaLabel}
-      disabled={pending}
+      size="sm"
+      icon={X}
+      label={ariaLabel}
+      loading={pending}
       onClick={() =>
         startTransition(async () => {
           const result = await unshareAction(path, userId, owner);
-          if (result?.error) toast.error(result.error);
+          if (result?.error) toast({ title: result.error, tone: "danger" });
         })
       }
-    >
-      <Icon name="x" className="size-4" />
-    </Button>
+    />
   );
 }

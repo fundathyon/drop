@@ -58,11 +58,11 @@ export function Dropzone({ id, name }: { id: string; name: string }) {
           addFiles(e.dataTransfer.files);
         }}
         className={cn(
-          "flex cursor-pointer flex-col items-center gap-1.5 rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground transition-colors",
-          dragging ? "border-foreground bg-muted" : "hover:bg-muted/50"
+          "flex cursor-pointer flex-col items-center gap-1.5 rounded-lg border border-dashed px-4 py-6 text-center text-sm text-text-muted transition-colors",
+          dragging ? "border-accent-border bg-accent-bg" : "hover:bg-surface-hover"
         )}
       >
-        <Icon name="upload" className="size-5" />
+        <Icon name="upload" size={20} />
         <span>{t("newDropDialog.dropzoneInstructions")}</span>
       </label>
 
@@ -74,14 +74,14 @@ export function Dropzone({ id, name }: { id: string; name: string }) {
               className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm"
             >
               <span className="flex-1 truncate">{file.name}</span>
-              <span className="shrink-0 text-xs text-muted-foreground">{formatSize(file.size)}</span>
+              <span className="shrink-0 text-xs text-text-muted">{formatSize(file.size)}</span>
               <button
                 type="button"
                 onClick={() => removeFile(index)}
                 aria-label={t("newDropDialog.removeFileAriaLabel", { name: file.name })}
-                className="shrink-0 text-muted-foreground hover:text-foreground"
+                className="shrink-0 text-text-muted hover:text-text"
               >
-                <Icon name="x" className="size-3.5" />
+                <Icon name="x" size={12} />
               </button>
             </li>
           ))}

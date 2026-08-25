@@ -2,6 +2,7 @@ import createMiddleware from "next-intl/middleware";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { routing } from "./i18n/routing";
+import { SHOW_PALETTE_TOOLS } from "./lib/flags";
 import {
   SESSION_COOKIE,
   decodeSession,
@@ -15,7 +16,15 @@ const intl = createMiddleware(routing);
 // Routes reachable without a session: signing in, the first-run wizard, and
 // accepting an invitation. Locale prefixes (e.g. "/en/login") are handled by
 // stripping the segment before matching.
-const publicRoutes = ["/login", "/setup", "/invitacion"];
+const publicRoutes = [
+  "/login",
+  "/setup",
+  "/invitacion",
+  // The palette page is a developer surface with no data on it, and it only
+  // exists outside production (see lib/flags.ts) — reaching it should not
+  // require a session, or checking a color would mean signing in first.
+  ...(SHOW_PALETTE_TOOLS ? ["/colores"] : []),
+];
 
 function withoutLocalePrefix(pathname: string): string {
   const segments = pathname.split("/");

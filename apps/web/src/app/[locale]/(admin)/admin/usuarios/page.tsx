@@ -1,28 +1,36 @@
 import { getTranslations } from "next-intl/server";
-import { requireAdmin } from "@/lib/session";
-import { api } from "@/lib/api";
-import { AdminLayout } from "@/components/admin-layout";
-import { Icon } from "@/components/icon";
-import { Badge } from "@/components/ui/badge";
+import { Mail, User } from "lucide-react";
 import {
+  Badge,
+  Heading,
+  Icon,
+  RoleBadge,
+  StatusBadge,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
+  type StatusKey,
+} from "@foundathyon/community-ui";
+import { requireAdmin } from "@/lib/session";
+import { api } from "@/lib/api";
+import { AdminLayout } from "@/components/admin-layout";
 import { formatDate } from "@/lib/format";
 import { InviteDialog } from "./invite-dialog";
 import { UserActions } from "./user-actions";
 import { RevokeInvitationButton } from "./revoke-invitation-button";
 import type { InvitationInfo, InvitationStatus, UserInfo } from "@/lib/types";
 
-const invitationStatusVariant: Record<InvitationStatus, "secondary" | "outline"> = {
-  pending: "secondary",
-  accepted: "outline",
-  expired: "outline",
-  revoked: "outline",
+// Drop's four invitation states onto the design system's canonical taxonomy
+// (§19) instead of inventing local badge variants: an accepted invitation is
+// an account that exists now, which the taxonomy already calls `active`.
+const invitationStatus: Record<InvitationStatus, StatusKey> = {
+  pending: "pending",
+  accepted: "active",
+  expired: "expired",
+  revoked: "revoked",
 };
 
 export default async function UsersPage() {
@@ -39,40 +47,36 @@ export default async function UsersPage() {
       actions={<InviteDialog />}
     >
       <section className="flex flex-col gap-3">
-        <h1 className="text-lg font-semibold">{t("accountsTitle")}</h1>
-        <div className="overflow-x-auto rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("nameHeader")}</TableHead>
-                <TableHead>{t("emailHeader")}</TableHead>
-                <TableHead>{t("roleHeader")}</TableHead>
-                <TableHead>{t("statusHeader")}</TableHead>
-                <TableHead>{t("lastLoginHeader")}</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.map((u) => (
-                <UserRow key={u.id} user={u} isCurrent={u.id === currentUser.id} t={t} />
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <Heading level={1}>{t("accountsTitle")}</Heading>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t("nameHeader")}</TableHead>
+              <TableHead>{t("emailHeader")}</TableHead>
+              <TableHead>{t("roleHeader")}</TableHead>
+              <TableHead>{t("statusHeader")}</TableHead>
+              <TableHead>{t("lastLoginHeader")}</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {users.map((u) => (
+              <UserRow key={u.id} user={u} isCurrent={u.id === currentUser.id} t={t} />
+            ))}
+          </TableBody>
+        </Table>
       </section>
 
       {invitations.length > 0 && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-semibold">{t("invitationsTitle")}</h2>
-          <div className="overflow-x-auto rounded-lg border">
-            <Table>
-              <TableBody>
-                {invitations.map((inv) => (
-                  <InvitationRow key={inv.id} invitation={inv} t={t} />
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <Heading level={2}>{t("invitationsTitle")}</Heading>
+          <Table>
+            <TableBody>
+              {invitations.map((inv) => (
+                <InvitationRow key={inv.id} invitation={inv} t={t} />
+              ))}
+            </TableBody>
+          </Table>
         </section>
       )}
     </AdminLayout>
@@ -89,25 +93,29 @@ function UserRow({
   t: Awaited<ReturnType<typeof getTranslations>>;
 }) {
   return (
-    <TableRow>
+    <TableRow terminal={!user.active}>
       <TableCell>
         <div className="flex items-center gap-2">
-          <Icon name="user" className="size-4 text-muted-foreground" />
+          <Icon icon={User} size={14} className="text-text-muted" />
           {user.name}
-          {isCurrent && <Badge variant="outline">{t("you")}</Badge>}
+          {isCurrent && (
+            <Badge variant="outline" tone="neutral">
+              {t("you")}
+            </Badge>
+          )}
         </div>
       </TableCell>
       <TableCell>{user.email}</TableCell>
       <TableCell>
-        <Badge variant={user.role === "admin" ? "default" : "secondary"}>{user.role}</Badge>
+        <RoleBadge role={user.role} />
       </TableCell>
       <TableCell>
-        <Badge variant={user.active ? "secondary" : "outline"}>
+        <StatusBadge status={user.active ? "active" : "disabled"}>
           {user.active ? t("active") : t("inactive")}
-        </Badge>
+        </StatusBadge>
       </TableCell>
       <TableCell>{formatDate(user.last_login_at)}</TableCell>
-      <TableCell className="text-right">
+      <TableCell align="right">
         {!isCurrent && <UserActions id={user.id} active={user.active} email={user.email} />}
       </TableCell>
     </TableRow>
@@ -122,25 +130,25 @@ function InvitationRow({
   t: Awaited<ReturnType<typeof getTranslations>>;
 }) {
   return (
-    <TableRow>
+    <TableRow terminal={invitation.status !== "pending"}>
       <TableCell>
         <div className="flex items-center gap-2">
-          <Icon name="mail" className="size-4 text-muted-foreground" />
+          <Icon icon={Mail} size={14} className="text-text-muted" />
           {invitation.email}
         </div>
       </TableCell>
       <TableCell>
-        <Badge variant={invitation.role === "admin" ? "default" : "secondary"}>{invitation.role}</Badge>
+        <RoleBadge role={invitation.role} />
       </TableCell>
       <TableCell>
-        <Badge variant={invitationStatusVariant[invitation.status]}>
+        <StatusBadge status={invitationStatus[invitation.status]}>
           {t(`invitationStatus.${invitation.status}`)}
-        </Badge>
+        </StatusBadge>
       </TableCell>
-      <TableCell className="text-muted-foreground">
+      <TableCell className="text-text-muted">
         {t("expiresAt", { date: formatDate(invitation.expires_at) })}
       </TableCell>
-      <TableCell className="text-right">
+      <TableCell align="right">
         {invitation.status === "pending" && (
           <RevokeInvitationButton id={invitation.id} email={invitation.email} />
         )}

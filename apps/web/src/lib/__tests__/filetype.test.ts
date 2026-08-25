@@ -18,7 +18,7 @@ describe("typeOf", () => {
   test("treats .drop as generated metadata, not a yaml file", () => {
     const type = typeOf(".drop");
     expect(type.label).toBe("DROP");
-    expect(type.accentClass).toBe("text-primary");
+    expect(type.accent).toBe("accent");
   });
 
   test("falls back to the uppercased extension for unknown types", () => {

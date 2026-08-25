@@ -1,9 +1,11 @@
 import { useTranslations } from "next-intl";
+import { Breadcrumb, SidebarProvider, Topbar, type BreadcrumbItem } from "@foundathyon/community-ui";
 import { Link } from "@/i18n/navigation";
+import { AccentPicker } from "@/components/accent-picker";
+import { AdminSidebar } from "@/components/admin-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AccountMenu } from "@/components/account-menu";
-import { Icon } from "@/components/icon";
-import { cn } from "@/lib/utils";
+import { SHOW_PALETTE_TOOLS } from "@/lib/flags";
 import type { UserInfo } from "@/lib/types";
 
 export interface Crumb {
@@ -27,107 +29,55 @@ export function AdminLayout({
   children: React.ReactNode;
 }) {
   const t = useTranslations("nav");
-  const shared = section === "shared";
+
+  const rootHref = section === "shared" ? "/compartido" : "/";
+
+  // Breadcrumb is server-safe, so its `render` functions never cross a client
+  // boundary and can build next-intl Links directly.
+  //
+  // Two details, both load-bearing. `href` goes on the item, not just inside
+  // `render`: Breadcrumb builds `{ href: item.href, className, children }` and
+  // hands that to `render`, so leaving it off means it passes `href: undefined`.
+  // And the spread comes BEFORE `href` for the same reason — spreading last
+  // clobbers the router link's destination with that undefined. (SidebarItem
+  // guards against exactly this and only emits `href` when it has one;
+  // Breadcrumb does not, so the caller has to.)
+  const items: BreadcrumbItem[] = [
+    {
+      label: section === "shared" ? t("sharedWithMe") : t("home"),
+      href: rootHref,
+      render: (props) => <Link {...props} href={rootHref} />,
+    },
+    ...(crumbs ?? []).map((crumb) => ({
+      label: crumb.name,
+      href: crumb.href,
+      render: (props: React.ComponentProps<"a">) => <Link {...props} href={crumb.href} />,
+    })),
+  ];
 
   return (
-    <div className="flex h-svh overflow-hidden">
-      <aside className="flex w-60 shrink-0 flex-col gap-1 border-r bg-background py-4">
-        <Link href="/" className="flex items-center gap-2 px-4 pb-4 font-semibold whitespace-nowrap">
-          <Icon name="package" className="size-5" />
-          <span>Drop</span>
-          <span className="text-sm font-normal text-muted-foreground">admin</span>
-        </Link>
+    <SidebarProvider storageKey="drop-sidebar">
+      <div className="flex h-svh overflow-hidden">
+        <AdminSidebar user={user} section={section} />
 
-        <nav aria-label={t("unitsAriaLabel")} className="flex flex-col gap-0.5 px-3">
-          <SidebarLink href="/" icon="house" active={!section}>
-            {t("myDrive")}
-          </SidebarLink>
-          <SidebarLink href="/compartido" icon="users" active={shared}>
-            {t("sharedWithMe")}
-          </SidebarLink>
-          {user.role === "admin" && (
-            <SidebarLink href="/admin/usuarios" icon="user" active={section === "users"}>
-              {t("manageUsers")}
-            </SidebarLink>
-          )}
-        </nav>
-      </aside>
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <Topbar
+            leading={crumbs ? <Breadcrumb items={items} label={t("routeAriaLabel")} /> : null}
+            trailing={
+              <>
+                {actions}
+                {SHOW_PALETTE_TOOLS && <AccentPicker />}
+                <ThemeToggle ariaLabel={t("themeToggleAriaLabel")} />
+                <AccountMenu user={user} />
+              </>
+            }
+          />
 
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="sticky top-0 z-10 flex flex-wrap items-center gap-3 border-b bg-background/80 px-4 py-3 backdrop-blur">
-          {crumbs && <Breadcrumbs crumbs={crumbs} shared={shared} homeLabel={t("home")} ariaLabel={t("routeAriaLabel")} />}
-
-          <div className="flex-1" />
-
-          {actions}
-          <ThemeToggle ariaLabel={t("themeToggleAriaLabel")} />
-          <AccountMenu user={user} />
-        </header>
-
-        <main className="flex flex-1 flex-col overflow-y-auto px-4 py-6 md:px-8">
-          <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4">{children}</div>
-        </main>
+          <main className="flex flex-1 flex-col overflow-y-auto px-4 py-6 md:px-8">
+            <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4">{children}</div>
+          </main>
+        </div>
       </div>
-    </div>
-  );
-}
-
-function SidebarLink({
-  href,
-  icon,
-  active,
-  children,
-}: {
-  href: string;
-  icon: string;
-  active: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        "flex items-center gap-3 rounded-full px-4 py-2 text-sm transition-colors",
-        active ? "bg-secondary font-medium text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
-      )}
-    >
-      <Icon name={icon} className="size-4 shrink-0" />
-      <span className="truncate">{children}</span>
-    </Link>
-  );
-}
-
-function Breadcrumbs({
-  crumbs,
-  shared,
-  homeLabel,
-  ariaLabel,
-}: {
-  crumbs: Crumb[];
-  shared?: boolean;
-  homeLabel: string;
-  ariaLabel: string;
-}) {
-  return (
-    <nav aria-label={ariaLabel} className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
-      <Icon name={shared ? "users" : "house"} className="size-4 shrink-0" />
-      {crumbs.length === 0 ? (
-        <span>{homeLabel}</span>
-      ) : (
-        crumbs.map((crumb, i) => (
-          <span key={crumb.href} className="flex items-center gap-1 truncate">
-            {i > 0 && <Icon name="chevron-right" className="size-3.5 shrink-0" />}
-            {i === crumbs.length - 1 ? (
-              <span className="truncate text-foreground">{crumb.name}</span>
-            ) : (
-              <Link href={crumb.href} className="truncate hover:text-foreground">
-                {crumb.name}
-              </Link>
-            )}
-          </span>
-        ))
-      )}
-    </nav>
+    </SidebarProvider>
   );
 }

@@ -1,12 +1,12 @@
 import { getTranslations } from "next-intl/server";
+import { ArrowLeft, Download, Lock } from "lucide-react";
+import { Heading, Icon, Text, Textarea } from "@foundathyon/community-ui";
 import { requireUser } from "@/lib/session";
 import { api } from "@/lib/api";
 import { AdminLayout } from "@/components/admin-layout";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Icon } from "@/components/icon";
 import { FileIcon } from "@/components/file-icon";
-import { Link } from "@/i18n/navigation";
+import { DocumentIcon } from "@/components/finder-icon";
+import { LinkButton } from "@/components/link-button";
 import { formatSize, joinPath } from "@/lib/format";
 import { typeOf } from "@/lib/filetype";
 import { EditorForm } from "./editor-form";
@@ -36,18 +36,14 @@ export default async function EditFilePage({
 
   const actions = (
     <>
-      <Button asChild variant="outline" size="sm">
-        <Link href={dropHref}>
-          <Icon name="arrow-left" className="size-4" />
-          {t("backToDrop")}
-        </Link>
-      </Button>
-      <Button asChild variant="outline" size="sm">
-        <a href={rawHref} target="_blank" rel="noreferrer">
-          <Icon name="download" className="size-4" />
-          {t("download")}
-        </a>
-      </Button>
+      <LinkButton href={dropHref}>
+        <ArrowLeft className="size-3.5" />
+        {t("backToDrop")}
+      </LinkButton>
+      <LinkButton href={rawHref} external>
+        <Download className="size-3.5" />
+        {t("download")}
+      </LinkButton>
     </>
   );
 
@@ -56,18 +52,20 @@ export default async function EditFilePage({
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-2">
           <FileIcon name={name} className="size-5" />
-          <h1 className="truncate text-lg font-semibold">{name}</h1>
+          <Heading level={1} className="truncate">
+            {name}
+          </Heading>
         </div>
 
         {!file ? (
-          <p className="text-sm text-muted-foreground">{t("notFound")}</p>
+          <Text tone="muted">{t("notFound")}</Text>
         ) : (
           <>
             {file.generated && (
-              <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Icon name="lock" className="size-4 shrink-0" />
+              <Text tone="muted" className="flex items-center gap-2">
+                <Icon icon={Lock} size={14} />
                 {t("generatedNotice")}
-              </p>
+              </Text>
             )}
 
             {type.editable && !file.generated && canEdit && (
@@ -89,23 +87,24 @@ export default async function EditFilePage({
               // happens to be — next/image needs a fixed/known-remote source,
               // which doesn't fit an arbitrary uploaded image.
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={rawHref} alt={name} className="max-w-full rounded-lg border" />
+              <img src={rawHref} alt={name} className="border-border max-w-full rounded-lg border" />
             )}
 
             {!type.editable && !type.image && (
-              <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed py-16 text-center text-muted-foreground">
-                <FileIcon name={name} className="size-8" />
-                <p>
+              // Not an EmptyState: nothing is missing here — the file exists and
+              // we simply can't render it (§11 keeps those apart). The document
+              // artwork does the explaining, at the size it was drawn for.
+              <div className="border-border flex flex-col items-center gap-3 rounded-lg border border-dashed py-16 text-center">
+                <DocumentIcon name={name} size={72} />
+                <Text tone="muted" as="div">
                   {type.label} · {formatSize(file.size)}
                   <br />
                   {t("unsupportedNotice")}
-                </p>
-                <Button asChild variant="outline" size="sm">
-                  <a href={rawHref} target="_blank" rel="noreferrer">
-                    <Icon name="download" className="size-4" />
-                    {t("download")}
-                  </a>
-                </Button>
+                </Text>
+                <LinkButton href={rawHref} external>
+                  <Download className="size-3.5" />
+                  {t("download")}
+                </LinkButton>
               </div>
             )}
           </>

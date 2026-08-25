@@ -1,12 +1,23 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { useTranslations } from "next-intl";
+import { ArrowRight, Eye, EyeOff, Lock, Mail, ShieldCheck } from "lucide-react";
+import { BrandMark, BrandPanel } from "@/components/brand-panel";
 import { loginAction, type LoginState } from "@/lib/actions/auth";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Icon } from "@/components/icon";
+
+// Structurally the same screen as dokgistry's components/LoginScreen.tsx —
+// same brand panel, same card, same pill badge, same icon-in-field inputs —
+// so both products' sign-in reads as one family. Three differences, all
+// deliberate:
+//
+//  * it submits through Drop's existing Server Action instead of fetch(), so
+//    the redirect and the session cookie keep working exactly as before;
+//  * the copy comes from next-intl, because Drop ships in two languages;
+//  * there is no "remember this device" checkbox. dokgistry has one, but
+//    Drop's API has no such concept (see loginAction / POST /v1/auth/login),
+//    and a checkbox that changes nothing is worse than no checkbox.
+const LOGIN_ERRORS = ["invalidCredentials", "accountDisabled", "tooManyAttempts"];
 
 export function LoginForm({
   next,
@@ -18,57 +29,107 @@ export function LoginForm({
   message?: string;
 }) {
   const t = useTranslations("login");
-  const [state, action, pending] = useActionState<LoginState, FormData>(loginAction, {
-    email,
-  });
+  const tc = useTranslations("common");
+  const [showPassword, setShowPassword] = useState(false);
+  const [state, action, pending] = useActionState<LoginState, FormData>(loginAction, { email });
+
+  // loginAction can also report "unexpectedError", which lives in the common
+  // namespace rather than this one — translating it here would miss.
+  const errorText = state?.error
+    ? LOGIN_ERRORS.includes(state.error)
+      ? t(state.error)
+      : tc("unexpectedError")
+    : null;
 
   return (
-    <form action={action} className="flex flex-col gap-6">
-      <div className="flex flex-col items-start gap-2">
-        <Icon name="package" className="size-8" />
-        <h1 className="text-xl font-semibold">{t("title")}</h1>
-        <p className="text-sm text-muted-foreground">{t("description")}</p>
-      </div>
+    <div className="onboarding">
+      <BrandPanel headline={t("headline")} tagline={t("tagline")} />
 
-      {!state?.error && message && (
-        <p className="flex items-center gap-2 text-sm text-success">
-          <Icon name="circle-check" className="size-4 shrink-0" />
-          {t(message)}
-        </p>
-      )}
+      <section className="onboardingFormPane">
+        <div className="onboardingFormCard">
+          <BrandMark />
 
-      {state?.error && (
-        <p role="alert" className="flex items-center gap-2 text-sm text-destructive">
-          <Icon name="triangle-alert" className="size-4 shrink-0" />
-          {t(state.error)}
-        </p>
-      )}
+          <div className="onboardingCard">
+            <span className="pillBadge pillBadgeAccent">
+              <ShieldCheck aria-hidden="true" />
+              {t("pill")}
+            </span>
 
-      <input type="hidden" name="next" value={next} />
+            <h2>{t("heading")}</h2>
+            <p className="onboardingSubtitle">{t("subtitle")}</p>
 
-      <div className="grid gap-2">
-        <Label htmlFor="email">{t("email")}</Label>
-        <Input
-          id="email"
-          name="email"
-          type="email"
-          autoComplete="username"
-          autoFocus
-          required
-          defaultValue={state?.email ?? email}
-        />
-      </div>
+            <form action={action} className="onboardingForm">
+              <input type="hidden" name="next" value={next} />
 
-      <div className="grid gap-2">
-        <Label htmlFor="password">{t("password")}</Label>
-        <Input id="password" name="password" type="password" autoComplete="current-password" required />
-      </div>
+              <div className="field">
+                <label htmlFor="email">{t("email")}</label>
+                <div className="inputIconWrap">
+                  <Mail className="inputIcon" aria-hidden="true" />
+                  <input
+                    id="email"
+                    name="email"
+                    type="email"
+                    required
+                    autoFocus
+                    autoComplete="username"
+                    placeholder={t("emailPlaceholder")}
+                    defaultValue={state?.email ?? email}
+                  />
+                </div>
+              </div>
 
-      <Button type="submit" disabled={pending} className="w-full">
-        {t("submit")}
-      </Button>
+              <div className="field">
+                <label htmlFor="password">{t("password")}</label>
+                <div className="inputIconWrap">
+                  <Lock className="inputIcon" aria-hidden="true" />
+                  <input
+                    id="password"
+                    name="password"
+                    type={showPassword ? "text" : "password"}
+                    required
+                    autoComplete="current-password"
+                    placeholder={t("passwordPlaceholder")}
+                    className="hasTrailingIcon"
+                  />
+                  <button
+                    type="button"
+                    className="inputTrailingButton"
+                    onClick={() => setShowPassword((v) => !v)}
+                    aria-label={showPassword ? t("hidePassword") : t("showPassword")}
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+                  </button>
+                </div>
+              </div>
 
-      <p className="text-center text-sm text-muted-foreground">{t("footer")}</p>
-    </form>
+              {!state?.error && message && (
+                <p className="onboardingNotice" role="status">
+                  {t(message)}
+                </p>
+              )}
+              {errorText && (
+                <p className="onboardingError" role="alert">
+                  {errorText}
+                </p>
+              )}
+
+              <button type="submit" className="buttonPrimary" disabled={pending}>
+                {pending ? (
+                  t("submitting")
+                ) : (
+                  <>
+                    {t("submit")}
+                    <ArrowRight className="buttonIcon" aria-hidden="true" />
+                  </>
+                )}
+              </button>
+
+              <p className="stepCaption">{t("footer")}</p>
+            </form>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }

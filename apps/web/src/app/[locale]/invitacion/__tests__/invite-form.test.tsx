@@ -15,8 +15,22 @@ mock.module("@/i18n/navigation", () => ({
 const { InviteForm } = await import("../invite-form");
 
 const messages = {
+  common: {
+    appName: "Drop",
+    poweredBy: "Powered by Foundathyon",
+    features: ["Publica una carpeta", "Cada publicación es una versión", "Comparte por rol"],
+  },
   invite: {
     title: "Drop admin",
+    headline: "Únete a Drop",
+    tagline: "Te han invitado a una organización.",
+    pill: "Invitación",
+    heading: "Crea tu cuenta",
+    invalidPill: "Invitación no válida",
+    namePlaceholder2: "Tu nombre",
+    passwordPlaceholder: "Al menos 8 caracteres",
+    passwordConfirmPlaceholder: "Repite la contraseña",
+    submitting: "Creando cuenta…",
     invitedDescription: "Te han invitado como <email></email> con el rol <role></role>. Elige una contraseña para crear tu cuenta.",
     name: "Nombre",
     namePlaceholder: "(la parte antes de la @ si lo dejas vacío)",

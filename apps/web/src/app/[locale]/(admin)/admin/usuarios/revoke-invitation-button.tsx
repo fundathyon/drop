@@ -1,7 +1,7 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { Button } from "@/components/ui/button";
+import { Button } from "@foundathyon/community-ui";
 import { ConfirmAction } from "@/components/confirm-action";
 import { revokeInvitationAction } from "./actions";
 
@@ -11,7 +11,7 @@ export function RevokeInvitationButton({ id, email }: { id: number; email: strin
   return (
     <ConfirmAction
       trigger={
-        <Button variant="outline" size="sm">
+        <Button variant="secondary" size="sm">
           {t("revoke")}
         </Button>
       }

@@ -1,108 +1,153 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { useTranslations } from "next-intl";
+import { ArrowRight, Eye, EyeOff, Lock, Mail, TriangleAlert, User } from "lucide-react";
+import { BrandMark, BrandPanel } from "@/components/brand-panel";
 import { Link } from "@/i18n/navigation";
 import { acceptInvitationAction, type InviteAcceptState } from "@/lib/actions/invite";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { PasswordInput } from "@/components/password-input";
-import { Icon } from "@/components/icon";
 import type { InvitationInfo } from "@/lib/types";
 
-// Keys that live in the `invite` namespace and should be translated; anything
-// else in state.error is a message the Go API already generated (verbatim,
-// safe to show as-is) for an invalid_body response.
+// Same first-run shell as login and setup. Not part of the "make it like
+// dokgistry" request on its own, but it is the third screen of the same
+// family — leaving it on the old split-panel layout would have meant two
+// different-looking sign-in flows in one product.
 const KNOWN_ERRORS = ["passwordMismatch"];
 
 export function InviteForm({ token, invitation }: { token: string; invitation: InvitationInfo | null }) {
   const t = useTranslations("invite");
+  const [showPassword, setShowPassword] = useState(false);
   const [state, action, pending] = useActionState<InviteAcceptState, FormData>(acceptInvitationAction, {});
 
   // A link that goes bad between page-load and submit (expired/revoked/
   // accepted mid-flight) falls through to the exact same view as one that
   // was already bad when the page loaded.
-  if (!invitation || state.error === "invalidInvitation") {
-    return (
-      <div className="flex flex-col gap-6">
-        <div className="flex flex-col items-start gap-2">
-          <Icon name="package" className="size-8" />
-          <h1 className="text-xl font-semibold">{t("title")}</h1>
-        </div>
-
-        <p role="alert" className="flex items-center gap-2 text-sm text-destructive">
-          <Icon name="triangle-alert" className="size-4 shrink-0" />
-          {t("invalidMessage")}
-        </p>
-
-        <p className="text-center text-sm text-muted-foreground">{t("invalidFooter")}</p>
-
-        <Button asChild variant="outline" className="w-full">
-          <Link href="/login">{t("goToLogin")}</Link>
-        </Button>
-      </div>
-    );
-  }
+  const unusable = !invitation || state.error === "invalidInvitation";
 
   return (
-    <form action={action} className="flex flex-col gap-6">
-      <div className="flex flex-col items-start gap-2">
-        <Icon name="package" className="size-8" />
-        <h1 className="text-xl font-semibold">{t("title")}</h1>
-        <p className="text-sm text-muted-foreground">
-          {t.rich("invitedDescription", {
-            email: () => <strong className="text-foreground">{invitation.email}</strong>,
-            role: () => (
-              <Badge variant="secondary">{invitation.role === "admin" ? t("roleAdmin") : t("roleUser")}</Badge>
-            ),
-          })}
-        </p>
-      </div>
+    <div className="onboarding">
+      <BrandPanel headline={t("headline")} tagline={t("tagline")} />
 
-      {state?.error && (
-        <p role="alert" className="flex items-center gap-2 text-sm text-destructive">
-          <Icon name="triangle-alert" className="size-4 shrink-0" />
-          {KNOWN_ERRORS.includes(state.error) ? t(state.error) : state.error}
-        </p>
-      )}
+      <section className="onboardingFormPane">
+        <div className="onboardingFormCard">
+          <BrandMark />
 
-      <input type="hidden" name="token" value={token} />
+          <div className="onboardingCard">
+            {unusable ? (
+              <>
+                <span className="pillBadge pillBadgeAccent">
+                  <TriangleAlert aria-hidden="true" />
+                  {t("invalidPill")}
+                </span>
+                <h2>{t("title")}</h2>
+                <p className="onboardingError" role="alert">
+                  {t("invalidMessage")}
+                </p>
+                <p className="onboardingSubtitle">{t("invalidFooter")}</p>
+                <div className="onboardingNav">
+                  <Link href="/login" className="buttonPrimary">
+                    {t("goToLogin")}
+                    <ArrowRight className="buttonIcon" aria-hidden="true" />
+                  </Link>
+                </div>
+              </>
+            ) : (
+              <>
+                <span className="pillBadge pillBadgeAccent">
+                  <Mail aria-hidden="true" />
+                  {t("pill")}
+                </span>
 
-      <div className="grid gap-2">
-        <Label htmlFor="name">{t("name")}</Label>
-        <Input id="name" name="name" autoComplete="name" placeholder={t("namePlaceholder")} />
-      </div>
+                <h2>{t("heading")}</h2>
+                <p className="onboardingSubtitle">
+                  {t.rich("invitedDescription", {
+                    email: () => <strong>{invitation.email}</strong>,
+                    role: () => <strong>{invitation.role === "admin" ? t("roleAdmin") : t("roleUser")}</strong>,
+                  })}
+                </p>
 
-      <div className="grid gap-2">
-        <Label htmlFor="password">{t("password")}</Label>
-        <PasswordInput
-          id="password"
-          name="password"
-          autoComplete="new-password"
-          required
-          showLabel={t("showPassword")}
-          hideLabel={t("hidePassword")}
-        />
-        <p className="text-xs text-muted-foreground">{t("passwordHint")}</p>
-      </div>
+                <form action={action} className="onboardingForm">
+                  <input type="hidden" name="token" value={token} />
 
-      <div className="grid gap-2">
-        <Label htmlFor="password_confirm">{t("passwordConfirm")}</Label>
-        <PasswordInput
-          id="password_confirm"
-          name="password_confirm"
-          autoComplete="new-password"
-          required
-          showLabel={t("showPassword")}
-          hideLabel={t("hidePassword")}
-        />
-      </div>
+                  <div className="field">
+                    <label htmlFor="name">{t("name")}</label>
+                    <div className="inputIconWrap">
+                      <User className="inputIcon" aria-hidden="true" />
+                      <input
+                        id="name"
+                        name="name"
+                        autoComplete="name"
+                        autoFocus
+                        placeholder={t("namePlaceholder2")}
+                      />
+                    </div>
+                  </div>
 
-      <Button type="submit" disabled={pending} className="w-full">
-        {t("submit")}
-      </Button>
-    </form>
+                  <div className="field">
+                    <label htmlFor="password">{t("password")}</label>
+                    <div className="inputIconWrap">
+                      <Lock className="inputIcon" aria-hidden="true" />
+                      <input
+                        id="password"
+                        name="password"
+                        type={showPassword ? "text" : "password"}
+                        required
+                        minLength={8}
+                        autoComplete="new-password"
+                        placeholder={t("passwordPlaceholder")}
+                        className="hasTrailingIcon"
+                      />
+                      <button
+                        type="button"
+                        className="inputTrailingButton"
+                        onClick={() => setShowPassword((v) => !v)}
+                        aria-label={showPassword ? t("hidePassword") : t("showPassword")}
+                        tabIndex={-1}
+                      >
+                        {showPassword ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+                      </button>
+                    </div>
+                    <p className="fieldHint">{t("passwordHint")}</p>
+                  </div>
+
+                  <div className="field">
+                    <label htmlFor="password_confirm">{t("passwordConfirm")}</label>
+                    <div className="inputIconWrap">
+                      <Lock className="inputIcon" aria-hidden="true" />
+                      <input
+                        id="password_confirm"
+                        name="password_confirm"
+                        type={showPassword ? "text" : "password"}
+                        required
+                        minLength={8}
+                        autoComplete="new-password"
+                        placeholder={t("passwordConfirmPlaceholder")}
+                      />
+                    </div>
+                  </div>
+
+                  {state?.error && (
+                    <p className="onboardingError" role="alert">
+                      {KNOWN_ERRORS.includes(state.error) ? t(state.error) : state.error}
+                    </p>
+                  )}
+
+                  <button type="submit" className="buttonPrimary" disabled={pending}>
+                    {pending ? (
+                      t("submitting")
+                    ) : (
+                      <>
+                        {t("submit")}
+                        <ArrowRight className="buttonIcon" aria-hidden="true" />
+                      </>
+                    )}
+                  </button>
+                </form>
+              </>
+            )}
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }

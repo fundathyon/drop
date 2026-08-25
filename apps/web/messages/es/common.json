@@ -10,6 +10,39 @@
     "saving": "Guardando…",
     "delete": "Eliminar",
     "deleting": "Eliminando…",
-    "unexpectedError": "Error inesperado"
+    "unexpectedError": "Error inesperado",
+    "features": [
+      "Publica una carpeta y queda online al instante",
+      "Cada publicación es una versión: vuelve atrás cuando quieras",
+      "Comparte con tu equipo por rol, o abre el drop al mundo"
+    ],
+    "poweredBy": "Powered by Foundathyon"
+  },
+  "colors": {
+    "title": "Acento",
+    "hint": "Herramienta de desarrollo: prueba la paleta. No se publica en producción.",
+    "pageTitle": "Paleta",
+    "pageDescription": "Cada muestra usa los tokens reales del sistema de diseño. Cambia el acento con el selector de arriba y todo lo de esta página se repinta.",
+    "sectionAccent": "Acento",
+    "sectionSemantic": "Tonos semánticos",
+    "sectionSurfaces": "Superficies y texto",
+    "sectionFiletypes": "Colores por tipo de archivo",
+    "sectionComponents": "Componentes con el acento actual",
+    "names": {
+      "red": "Rojo",
+      "orange": "Naranja",
+      "amber": "Ámbar",
+      "lime": "Lima",
+      "emerald": "Verde",
+      "teal": "Turquesa",
+      "cyan": "Cian",
+      "sky": "Celeste",
+      "blue": "Azul",
+      "indigo": "Índigo",
+      "violet": "Violeta",
+      "purple": "Púrpura",
+      "magenta": "Magenta",
+      "pink": "Rosa"
+    }
   }
 }

@@ -2,20 +2,25 @@
 
 import { useActionState, useState } from "react";
 import { useTranslations } from "next-intl";
+import { Pencil } from "lucide-react";
 import {
+  Alert,
+  Button,
+  DescriptionList,
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Icon } from "@/components/icon";
+  FormField,
+  Input,
+  Select,
+  SelectItem,
+  Separator,
+} from "@foundathyon/community-ui";
 import { useCloseOnSuccess } from "@/hooks/use-close-on-success";
 import { formatDate } from "@/lib/format";
 import { patchDropAction, type PatchDropState } from "./actions";
@@ -33,6 +38,7 @@ export function EditMetaDialog({
   const t = useTranslations("drop");
   const tc = useTranslations("common");
   const [open, setOpen] = useState(false);
+  const [visibility, setVisibility] = useState<string | null>(meta.visibility);
   const [state, action, pending] = useActionState<PatchDropState | undefined, FormData>(
     (_prev, formData) => patchDropAction(path, formData, owner),
     undefined
@@ -42,13 +48,14 @@ export function EditMetaDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Icon name="pencil" className="size-4" />
-          {t("editMeta.trigger")}
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
+      <DialogTrigger
+        render={
+          <Button variant="secondary" size="sm" leading={<Pencil />}>
+            {t("editMeta.trigger")}
+          </Button>
+        }
+      />
+      <DialogContent size="md">
         <form action={action}>
           <DialogHeader>
             <DialogTitle>{t("editMeta.title")}</DialogTitle>
@@ -57,47 +64,40 @@ export function EditMetaDialog({
             </DialogDescription>
           </DialogHeader>
           {state?.error && (
-            <p role="alert" className="flex items-center gap-2 pt-3 text-sm text-destructive">
-              <Icon name="triangle-alert" className="size-4 shrink-0" />
-              {t(`editMeta.error.${state.error}`)}
-            </p>
+            <div className="pt-3">
+              <Alert tone="danger" title={t(`editMeta.error.${state.error}`)} />
+            </div>
           )}
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="edit-meta-title">{t("editMeta.titleLabel")}</Label>
+          <DialogBody className="grid gap-4 py-4">
+            <FormField label={t("editMeta.titleLabel")}>
               <Input id="edit-meta-title" name="title" defaultValue={meta.title} autoFocus />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="edit-meta-visibility">{t("editMeta.visibilityLabel")}</Label>
-              <Select name="visibility" defaultValue={meta.visibility}>
-                <SelectTrigger id="edit-meta-visibility" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="private">{t("editMeta.visibilityPrivate")}</SelectItem>
-                  <SelectItem value="unlisted">{t("editMeta.visibilityUnlisted")}</SelectItem>
-                  <SelectItem value="public">{t("editMeta.visibilityPublic")}</SelectItem>
-                </SelectContent>
+            </FormField>
+            <FormField label={t("editMeta.visibilityLabel")}>
+              <Select name="visibility" value={visibility} onValueChange={setVisibility}>
+                <SelectItem value="private">{t("editMeta.visibilityPrivate")}</SelectItem>
+                <SelectItem value="unlisted">{t("editMeta.visibilityUnlisted")}</SelectItem>
+                <SelectItem value="public">{t("editMeta.visibilityPublic")}</SelectItem>
               </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="edit-meta-entrypoint">{t("editMeta.entrypointLabel")}</Label>
+            </FormField>
+            <FormField label={t("editMeta.entrypointLabel")}>
               <Input id="edit-meta-entrypoint" name="entrypoint" defaultValue={meta.entrypoint} />
-            </div>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 border-t pt-3 text-sm text-muted-foreground">
-              <dt>{t("editMeta.slugLabel")}</dt>
-              <dd className="font-mono text-foreground">{meta.slug}</dd>
-              <dt>{t("editMeta.createdLabel")}</dt>
-              <dd>{formatDate(meta.created_at)}</dd>
-              <dt>{t("editMeta.updatedLabel")}</dt>
-              <dd>{formatDate(meta.updated_at)}</dd>
-            </dl>
-          </div>
+            </FormField>
+            <Separator />
+            <DescriptionList
+              items={[
+                // `mono` on the slug only: it is meant to be copied and compared
+                // character by character (§03), unlike the two dates.
+                { label: t("editMeta.slugLabel"), value: meta.slug, mono: true },
+                { label: t("editMeta.createdLabel"), value: formatDate(meta.created_at) },
+                { label: t("editMeta.updatedLabel"), value: formatDate(meta.updated_at) },
+              ]}
+            />
+          </DialogBody>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               {tc("cancel")}
             </Button>
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" variant="primary" loading={pending}>
               {pending ? tc("saving") : tc("save")}
             </Button>
           </DialogFooter>

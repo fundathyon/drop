@@ -2,7 +2,9 @@
 
 import { useActionState, useState } from "react";
 import { useTranslations } from "next-intl";
+import { FolderPlus } from "lucide-react";
 import {
+  Button,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -10,11 +12,9 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Icon } from "@/components/icon";
+  FormField,
+  Input,
+} from "@foundathyon/community-ui";
 import { useCloseOnSuccess } from "@/hooks/use-close-on-success";
 import { createFolderAction } from "./actions";
 
@@ -28,13 +28,14 @@ export function NewFolderDialog({ parent, owner }: { parent: string; owner?: num
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Icon name="folder-plus" className="size-4" />
-          {t("newFolder")}
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
+      <DialogTrigger
+        render={
+          <Button variant="secondary" size="sm" leading={<FolderPlus />}>
+            {t("newFolder")}
+          </Button>
+        }
+      />
+      <DialogContent size="sm">
         <form action={action}>
           <DialogHeader>
             <DialogTitle>{t("newFolderDialog.title")}</DialogTitle>
@@ -42,21 +43,22 @@ export function NewFolderDialog({ parent, owner }: { parent: string; owner?: num
           </DialogHeader>
           <input type="hidden" name="parent" value={parent} />
           {owner ? <input type="hidden" name="owner" value={owner} /> : null}
-          <div className="grid gap-2 py-4">
-            <Label htmlFor="new-folder-name">{t("newFolderDialog.nameLabel")}</Label>
-            <Input
-              id="new-folder-name"
-              name="name"
-              placeholder={t("newFolderDialog.namePlaceholder")}
-              required
-              autoFocus
-            />
+          <div className="py-4">
+            <FormField label={t("newFolderDialog.nameLabel")}>
+              <Input
+                id="new-folder-name"
+                name="name"
+                placeholder={t("newFolderDialog.namePlaceholder")}
+                required
+                autoFocus
+              />
+            </FormField>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               {tc("cancel")}
             </Button>
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" variant="primary" loading={pending}>
               {tc("create")}
             </Button>
           </DialogFooter>
