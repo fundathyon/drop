@@ -31,6 +31,56 @@ cambió: sigue siendo la misma bajo `/v1`, con `Authorization: Bearer` como
 
 El diseño completo del sistema vive en [`docs/design/`](docs/design/README.md).
 
+## Capturas
+
+El panel corre sobre [`@foundathyon/community-ui`](https://github.com/foundathyon/community-ui),
+así que el acento y el tema (claro / oscuro / el del sistema) salen de los tokens
+del sistema de diseño, no de estilos propios. Estas capturas están en oscuro con
+el acento por defecto; el mismo panel en claro es el mismo panel.
+
+### El explorador
+
+![El explorador de Drop: carpetas y drops en la unidad propia](docs/screenshots/explorador.png)
+
+La unidad de cada cuenta, en cuadrícula. Las carpetas y los drops se distinguen
+por el icono, no por una etiqueta: un drop lleva el cubo encima de la carpeta
+porque es una carpeta que además está publicada. El sidebar se colapsa a 48px
+con ⌘B y la elección se recuerda entre visitas.
+
+### Acciones rápidas
+
+![Menú contextual sobre un drop, con abrir, copiar enlace y eliminar](docs/screenshots/menu-acciones.png)
+
+Click derecho sobre un archivo, una carpeta o un drop. Todo lo que hay en el
+menú existe ya en otro sitio de la pantalla — el click derecho no se descubre
+solo y en táctil apenas es una pulsación larga, así que nada vive únicamente
+aquí. Lo destructivo va al final, separado, y siempre abre una confirmación.
+
+### El editor
+
+![El editor de archivos: Monaco con resaltado de sintaxis y minimapa](docs/screenshots/editor.png)
+
+Los archivos de texto de un drop se editan en el sitio, con
+[Monaco](https://microsoft.github.io/monaco-editor/) — el editor de VS Code:
+números de línea, plegado, búsqueda, multi-cursor y autocompletado de HTML, CSS
+y JSON. ⌘S guarda; salir con cambios sin guardar pide confirmación.
+
+El resaltado **no** usa un tema de editor de los de siempre: los colores se
+resuelven en tiempo real desde los mismos tokens CSS que pinta el resto del
+panel, así que el editor sigue el acento que elijas y cambia de tema con él. Un
+archivo solo puede mostrar los colores que el panel ya usa.
+
+Editar aquí cambia la versión actual del drop; **no** abre una versión nueva.
+Las versiones las corta la subida, no cada guardado.
+
+### El badge del drop
+
+![El badge inyectado en una página publicada, con sus pestañas](docs/screenshots/badge.png)
+
+Las páginas HTML servidas en `/d/{slug}/` llevan un badge con el detalle del
+drop, sus archivos y su historial de versiones, más las acciones de compartir y
+copiar enlace. Se desactiva con `DROP_INJECT_WIDGET=false`.
+
 ## Modelo de datos
 
 Estilo Drive, con la metadata y los bytes en sitios distintos:
@@ -78,8 +128,8 @@ fallar con un conflicto:
 - Republicar **no** cambia la visibilidad salvo que se pida explícitamente: un
   drop privado no se abre al mundo por volver a subirlo.
 
-Las páginas HTML servidas llevan un badge inyectado con el detalle del drop y su
-historial (se desactiva con `DROP_INJECT_WIDGET=false`).
+Las páginas HTML servidas llevan el badge inyectado que se ve más arriba, en
+[Capturas](#el-badge-del-drop).
 
 ## Cómo ejecutarlo
 
