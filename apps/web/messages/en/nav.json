@@ -5,6 +5,8 @@
     "sharedWithMe": "Shared with me",
     "home": "Home",
     "routeAriaLabel": "Route",
+    "toggleSidebar": "Show or hide the sidebar",
+    "sidebarHint": "Sidebar <kbd>⌘B</kbd>",
     "themeToggleAriaLabel": "Toggle theme",
     "accountRoleLabel": "{email} · {role}",
     "manageUsers": "Users and invitations",

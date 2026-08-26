@@ -1,8 +1,9 @@
 import { useTranslations } from "next-intl";
-import { Breadcrumb, SidebarProvider, Topbar, type BreadcrumbItem } from "@foundathyon/community-ui";
+import { Breadcrumb, SidebarTrigger, type BreadcrumbItem } from "@foundathyon/community-ui";
 import { Link } from "@/i18n/navigation";
 import { AccentPicker } from "@/components/accent-picker";
 import { AdminSidebar } from "@/components/admin-sidebar";
+import { ShellMain } from "@/components/shell-main";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AccountMenu } from "@/components/account-menu";
 import { SHOW_PALETTE_TOOLS } from "@/lib/flags";
@@ -18,6 +19,7 @@ export function AdminLayout({
   section,
   crumbs,
   actions,
+  wide,
   children,
 }: {
   user: UserInfo;
@@ -26,6 +28,8 @@ export function AdminLayout({
   section?: "shared" | "users";
   crumbs?: Crumb[];
   actions?: React.ReactNode;
+  /** See ShellMain: full-width content, for pages that are a tool. */
+  wide?: boolean;
   children: React.ReactNode;
 }) {
   const t = useTranslations("nav");
@@ -55,29 +59,39 @@ export function AdminLayout({
     })),
   ];
 
+  // SidebarProvider is NOT here: it lives in the (admin) route-group layout,
+  // which is the highest point that can read the request and therefore the
+  // only place the collapse preference can be resolved before the HTML is
+  // rendered. See lib/sidebar.ts.
   return (
-    <SidebarProvider storageKey="drop-sidebar">
-      <div className="flex h-svh overflow-hidden">
-        <AdminSidebar user={user} section={section} />
+    <div className="flex h-svh overflow-hidden">
+      <AdminSidebar user={user} section={section} />
 
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <Topbar
-            leading={crumbs ? <Breadcrumb items={items} label={t("routeAriaLabel")} /> : null}
-            trailing={
-              <>
-                {actions}
-                {SHOW_PALETTE_TOOLS && <AccentPicker />}
-                <ThemeToggle ariaLabel={t("themeToggleAriaLabel")} />
-                <AccountMenu user={user} />
-              </>
-            }
-          />
-
-          <main className="flex flex-1 flex-col overflow-y-auto px-4 py-6 md:px-8">
-            <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4">{children}</div>
-          </main>
-        </div>
-      </div>
-    </SidebarProvider>
+      <ShellMain
+        wide={wide}
+        // SidebarTrigger lives OUTSIDE the sidebar, in the Topbar's leading
+        // zone, exactly as §12 places it — and that position is what makes it
+        // work. The collapse preference is persisted per product, so a shell
+        // whose only way back is ⌘B strands anyone who collapsed it once and
+        // never learned the shortcut: 48px of unlabelled icons, no visible
+        // way out. The trigger is always rendered, at both widths.
+        leading={
+          <>
+            <SidebarTrigger label={t("toggleSidebar")} />
+            {crumbs ? <Breadcrumb items={items} label={t("routeAriaLabel")} /> : null}
+          </>
+        }
+        trailing={
+          <>
+            {actions}
+            {SHOW_PALETTE_TOOLS && <AccentPicker />}
+            <ThemeToggle ariaLabel={t("themeToggleAriaLabel")} />
+            <AccountMenu user={user} />
+          </>
+        }
+      >
+        {children}
+      </ShellMain>
+    </div>
   );
 }

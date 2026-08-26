@@ -2,7 +2,15 @@
 
 import { House, Package, User, Users } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { Sidebar, SidebarHeader, SidebarItem, SidebarSection } from "@foundathyon/community-ui";
+import {
+  Kbd,
+  Sidebar,
+  SidebarFooter,
+  SidebarHeader,
+  SidebarItem,
+  SidebarSection,
+  useSidebar,
+} from "@foundathyon/community-ui";
 import { Link } from "@/i18n/navigation";
 import type { UserInfo } from "@/lib/types";
 
@@ -18,13 +26,28 @@ export function AdminSidebar({ user, section }: { user: UserInfo; section?: "sha
   const t = useTranslations("nav");
   const c = useTranslations("common");
 
+  // §12: collapsed is 48 icon-only pixels. SidebarSection and SidebarItem
+  // already step aside on their own (labels go `sr-only`, counters hide); the
+  // two slots the library hands over whole — header and footer — are the
+  // caller's job, and text left in them is what overflows a 48px rail.
+  const { collapsed } = useSidebar();
+
   return (
     <Sidebar>
       <SidebarHeader>
-        <Link href="/" className="flex items-center gap-2 font-semibold whitespace-nowrap">
+        <Link
+          href="/"
+          className="flex items-center gap-2 font-semibold whitespace-nowrap"
+          // Collapsed the wordmark is gone, so the icon has to carry the name.
+          aria-label={collapsed ? `${c("appName")} ${c("adminSuffix")}` : undefined}
+        >
           <Package className="size-5 shrink-0" aria-hidden="true" />
-          <span>{c("appName")}</span>
-          <span className="text-text-muted text-sm font-normal">{c("adminSuffix")}</span>
+          {!collapsed && (
+            <>
+              <span>{c("appName")}</span>
+              <span className="text-text-muted text-sm font-normal">{c("adminSuffix")}</span>
+            </>
+          )}
         </Link>
       </SidebarHeader>
 
@@ -50,6 +73,18 @@ export function AdminSidebar({ user, section }: { user: UserInfo; section?: "sha
           />
         )}
       </SidebarSection>
+
+      {/* ⌘B is a suite-wide shortcut a product cannot reassign (§17), which
+          also makes it something a product has to teach. The Topbar trigger is
+          the discoverable half; this is the half that tells you there is a
+          faster way. */}
+      {!collapsed && (
+        <SidebarFooter>
+          <span className="text-caption text-text-muted flex items-center gap-1.5 px-4">
+            {t.rich("sidebarHint", { kbd: (chunks) => <Kbd>{chunks}</Kbd> })}
+          </span>
+        </SidebarFooter>
+      )}
     </Sidebar>
   );
 }
