@@ -65,6 +65,8 @@ export interface FileType {
   editable: boolean;
   image: boolean;
   contentType: string;
+  /** Monaco language id used by the file editor; `plaintext` when unknown. */
+  monaco: string;
 }
 
 const unknownType: Omit<FileType, "label"> = {
@@ -73,6 +75,7 @@ const unknownType: Omit<FileType, "label"> = {
   editable: false,
   image: false,
   contentType: "application/octet-stream",
+  monaco: "plaintext",
 };
 
 interface Row {
@@ -82,21 +85,22 @@ interface Row {
   editable?: boolean;
   image?: boolean;
   contentType: string;
+  monaco?: string;
 }
 
 const fileTypes: Record<string, Row> = {
-  html: { label: "HTML", icon: "file-code", accent: "ft-orange", editable: true, contentType: "text/html" },
-  css: { label: "CSS", icon: "file-code", accent: "ft-sky", editable: true, contentType: "text/css" },
-  js: { label: "JS", icon: "file-code", accent: "ft-yellow", editable: true, contentType: "text/javascript" },
-  ts: { label: "TS", icon: "file-code", accent: "ft-blue", editable: true, contentType: "text/typescript" },
-  jsx: { label: "JSX", icon: "file-code", accent: "ft-cyan", editable: true, contentType: "text/javascript" },
-  tsx: { label: "TSX", icon: "file-code", accent: "ft-cyan", editable: true, contentType: "text/typescript" },
-  json: { label: "JSON", icon: "file-json", accent: "ft-amber", editable: true, contentType: "application/json" },
-  md: { label: "MD", icon: "file-text", accent: "ft-slate", editable: true, contentType: "text/markdown" },
-  txt: { label: "TXT", icon: "file-text", accent: "ft-neutral", editable: true, contentType: "text/plain" },
-  yaml: { label: "YAML", icon: "file-cog", accent: "ft-violet", editable: true, contentType: "application/yaml" },
-  svg: { label: "SVG", icon: "file-image", accent: "ft-emerald", editable: true, image: true, contentType: "image/svg+xml" },
-  xml: { label: "XML", icon: "file-code", accent: "ft-emerald", editable: true, contentType: "application/xml" },
+  html: { label: "HTML", icon: "file-code", accent: "ft-orange", editable: true, contentType: "text/html", monaco: "html" },
+  css: { label: "CSS", icon: "file-code", accent: "ft-sky", editable: true, contentType: "text/css", monaco: "css" },
+  js: { label: "JS", icon: "file-code", accent: "ft-yellow", editable: true, contentType: "text/javascript", monaco: "javascript" },
+  ts: { label: "TS", icon: "file-code", accent: "ft-blue", editable: true, contentType: "text/typescript", monaco: "typescript" },
+  jsx: { label: "JSX", icon: "file-code", accent: "ft-cyan", editable: true, contentType: "text/javascript", monaco: "javascript" },
+  tsx: { label: "TSX", icon: "file-code", accent: "ft-cyan", editable: true, contentType: "text/typescript", monaco: "typescript" },
+  json: { label: "JSON", icon: "file-json", accent: "ft-amber", editable: true, contentType: "application/json", monaco: "json" },
+  md: { label: "MD", icon: "file-text", accent: "ft-slate", editable: true, contentType: "text/markdown", monaco: "markdown" },
+  txt: { label: "TXT", icon: "file-text", accent: "ft-neutral", editable: true, contentType: "text/plain", monaco: "plaintext" },
+  yaml: { label: "YAML", icon: "file-cog", accent: "ft-violet", editable: true, contentType: "application/yaml", monaco: "yaml" },
+  svg: { label: "SVG", icon: "file-image", accent: "ft-emerald", editable: true, image: true, contentType: "image/svg+xml", monaco: "xml" },
+  xml: { label: "XML", icon: "file-code", accent: "ft-emerald", editable: true, contentType: "application/xml", monaco: "xml" },
   png: { label: "PNG", icon: "file-image", accent: "ft-emerald", image: true, contentType: "image/png" },
   jpg: { label: "JPG", icon: "file-image", accent: "ft-emerald", image: true, contentType: "image/jpeg" },
   gif: { label: "GIF", icon: "file-image", accent: "ft-emerald", image: true, contentType: "image/gif" },
@@ -128,6 +132,7 @@ export function typeOf(name: string): FileType {
       editable: true,
       image: false,
       contentType: "application/yaml",
+      monaco: "yaml",
     };
   }
 
@@ -136,7 +141,7 @@ export function typeOf(name: string): FileType {
   const resolved = aliases[ext] ?? ext;
   const row = fileTypes[resolved];
   if (row) {
-    return { editable: false, image: false, ...row };
+    return { editable: false, image: false, monaco: "plaintext", ...row };
   }
   return { label: ext ? ext.toUpperCase() : "FILE", ...unknownType };
 }

@@ -1,6 +1,6 @@
 import { getTranslations } from "next-intl/server";
 import { ArrowLeft, Download, Lock } from "lucide-react";
-import { Heading, Icon, Text, Textarea } from "@foundathyon/community-ui";
+import { Heading, Icon, Text } from "@foundathyon/community-ui";
 import { requireUser } from "@/lib/session";
 import { api } from "@/lib/api";
 import { AdminLayout } from "@/components/admin-layout";
@@ -9,6 +9,7 @@ import { DocumentIcon } from "@/components/finder-icon";
 import { LinkButton } from "@/components/link-button";
 import { formatSize, joinPath } from "@/lib/format";
 import { typeOf } from "@/lib/filetype";
+import { CodeEditor } from "@/components/code-editor";
 import { EditorForm } from "./editor-form";
 
 export default async function EditFilePage({
@@ -32,6 +33,10 @@ export default async function EditFilePage({
   const t = await getTranslations("editor");
 
   const dropHref = `/drop/${path}${owner ? `?owner=${owner}` : ""}`;
+  // Only the branch that actually shows an editor earns the full width. The
+  // "not found" line, the image preview and the unsupported-type card are all
+  // small, centred things that would just be stretched by it.
+  const showsEditor = Boolean(file && type.editable);
   const rawHref = api.fileRawPath(fullPath, owner);
 
   const actions = (
@@ -48,8 +53,8 @@ export default async function EditFilePage({
   );
 
   return (
-    <AdminLayout user={user} section={owner ? "shared" : undefined} actions={actions}>
-      <div className="flex flex-col gap-4">
+    <AdminLayout user={user} section={owner ? "shared" : undefined} actions={actions} wide={showsEditor}>
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
         <div className="flex items-center gap-2">
           <FileIcon name={name} className="size-5" />
           <Heading level={1} className="truncate">
@@ -72,13 +77,17 @@ export default async function EditFilePage({
               <EditorForm path={path} name={name} owner={owner} content={content ?? ""} file={file} type={type} />
             )}
 
+            {/* Same editor, no write access: a file you may not change should
+                still be as readable as one you may — same highlighting, same
+                search, same folding. */}
             {type.editable && (file.generated || !canEdit) && (
-              <Textarea
+              <CodeEditor
                 readOnly
-                defaultValue={content ?? ""}
-                spellCheck={false}
-                className="min-h-[60vh] resize-y font-mono text-sm"
-                style={{ tabSize: 2 }}
+                value={content ?? ""}
+                language={type.monaco}
+                path={name}
+                ariaLabel={t("editorAriaLabel", { name })}
+                className="min-h-80 flex-1"
               />
             )}
 

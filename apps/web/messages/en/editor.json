@@ -5,6 +5,14 @@
     "generatedNotice": "This file is kept up to date by the API: it's regenerated on every change to the drop.",
     "notFound": "That file wasn't found in this drop.",
     "unsupportedNotice": "This file type can't be edited here.",
+    "editorAriaLabel": "Code editor for {name}",
+    "cursor": "Ln {line}, Col {column}",
+    "lines": "{count, plural, one {# line} other {# lines}}",
+    "unsaved": "Unsaved",
+    "discardTitle": "Discard your changes",
+    "discardDescription": "The changes you made to {name} will be lost. This can't be undone.",
+    "discardVerb": "Discard changes",
+    "keepEditing": "Keep editing",
     "error": {
       "unexpected": "Unexpected error"
     }

@@ -5,6 +5,14 @@
     "generatedNotice": "Este archivo lo mantiene la API: se regenera con cada cambio del drop.",
     "notFound": "No se encontró ese archivo en este drop.",
     "unsupportedNotice": "Este tipo de archivo no se puede editar aquí.",
+    "editorAriaLabel": "Editor de código de {name}",
+    "cursor": "Ln {line}, Col {column}",
+    "lines": "{count, plural, one {# línea} other {# líneas}}",
+    "unsaved": "Sin guardar",
+    "discardTitle": "Descartar los cambios",
+    "discardDescription": "Los cambios que hiciste en {name} se perderán. Esta acción no se puede deshacer.",
+    "discardVerb": "Descartar cambios",
+    "keepEditing": "Seguir editando",
     "error": {
       "unexpected": "Error inesperado"
     }
