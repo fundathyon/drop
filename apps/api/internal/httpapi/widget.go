@@ -43,6 +43,11 @@ type widgetData struct {
 type widgetFileData struct {
 	Name string `json:"name"`
 	Size int64  `json:"size"`
+	// Type is the stored content type. The badge could guess one from the
+	// extension, but it decides whether a file is previewable and how — and a
+	// ".bin" that is really a PNG, or an extensionless file, would be guessed
+	// wrong. What the API stored is the answer.
+	Type string `json:"type"`
 }
 
 type widgetVersionData struct {
@@ -64,7 +69,7 @@ func newWidgetData(published service.PublishedVersion) widgetData {
 		if f.Generated {
 			continue
 		}
-		files = append(files, widgetFileData{Name: f.Name, Size: f.Size})
+		files = append(files, widgetFileData{Name: f.Name, Size: f.Size, Type: f.ContentType})
 	}
 
 	versions := make([]widgetVersionData, 0, len(detail.Versions))
