@@ -613,3 +613,34 @@
 .accentSwatch {
   background: oklch(var(--fdn-accent-l) var(--fdn-accent-c) var(--fdn-accent-hue));
 }
+
+/* ---------------------------------------------------------------------- */
+/* Modal centering                                                        */
+/*                                                                        */
+/* community-ui v0.2.0 centers Dialog and ConfirmDialog with the classic  */
+/* absolute-centering trick — `inset-0` + `m-auto` + `h-fit` — but then    */
+/* also emits `sm:bottom-auto`, and Tailwind orders `bottom-*` after the   */
+/* `inset-*` shorthand, so `bottom: auto` is what lands.                   */
+/*                                                                        */
+/* That breaks the trick. Auto margins only absorb free space when BOTH    */
+/* edges of the axis are resolved (CSS 2.1 §10.6.4); with `bottom: auto`   */
+/* the box is over-constrained the other way, `margin-top` computes to 0,  */
+/* and every dialog hangs from the top of the viewport. Horizontally it    */
+/* still centers, which is why it reads as "not quite right" rather than   */
+/* obviously broken.                                                       */
+/*                                                                        */
+/* Restoring `bottom` is the whole fix. Keyed on role + the library's own  */
+/* `.fdn-z-modal` because Base UI gives Popover `role="dialog"` too and    */
+/* emits no `aria-modal`, so the role alone would drag popovers — which    */
+/* are placed by a Positioner — into this. Two compound selectors also     */
+/* outrank the single utility class, so source order does not matter.      */
+/*                                                                        */
+/* Delete once community-ui drops `sm:bottom-auto`; this becomes a no-op.  */
+/* Mobile is untouched on purpose: below `sm` a modal is a bottom sheet.   */
+/* ---------------------------------------------------------------------- */
+@media (min-width: 40rem) {
+  [role="dialog"].fdn-z-modal,
+  [role="alertdialog"].fdn-z-modal {
+    bottom: 0;
+  }
+}
