@@ -18,8 +18,10 @@ import { api } from "@/lib/api";
 import { AdminLayout, type Crumb } from "@/components/admin-layout";
 import { FileIcon } from "@/components/file-icon";
 import { LinkButton } from "@/components/link-button";
+import { QuickActions } from "@/components/quick-actions";
 import { decodePathSegments, formatDate, formatSize, joinPath } from "@/lib/format";
 import { typeOf } from "@/lib/filetype";
+import { deleteFileAction } from "./actions";
 import { CopyButton } from "./copy-button";
 import { DeleteDropButton } from "./delete-drop-button";
 import { DeleteFileButton } from "./delete-file-button";
@@ -186,7 +188,24 @@ export default async function DropPage({
             </TableHeader>
             <TableBody>
               {detail.files.map((file) => (
-                <TableRow key={file.name} interactive>
+                <QuickActions
+                  key={file.name}
+                  render={<TableRow interactive />}
+                  name={file.name}
+                  kind="file"
+                  openHref={editHref(path, owner, file.name)}
+                  downloadHref={api.fileRawPath(joinPath(path, file.name), owner)}
+                  // Generated files are maintained by the API and viewers cannot
+                  // change anything — in both cases the menu simply has no
+                  // destructive item, matching the row's own trailing actions.
+                  deleteAction={
+                    !file.generated && canEdit
+                      ? deleteFileAction.bind(null, joinPath(path, file.name), owner)
+                      : undefined
+                  }
+                  deleteTitle={t("files.deleteTitle")}
+                  deleteDescription={t("files.deleteDescription", { name: file.name })}
+                >
                   <TableCell>
                     <a href={editHref(path, owner, file.name)} className="flex items-center gap-2">
                       <FileIcon name={file.name} />
@@ -222,7 +241,7 @@ export default async function DropPage({
                       )}
                     </div>
                   </TableCell>
-                </TableRow>
+                </QuickActions>
               ))}
             </TableBody>
           </Table>

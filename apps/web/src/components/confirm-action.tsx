@@ -19,13 +19,22 @@ export interface ActionResult {
 // can retry or cancel.
 export function ConfirmAction({
   trigger,
+  open,
+  onOpenChange,
   title,
   description,
   action,
   destructive = true,
   confirmLabel,
 }: {
-  trigger: React.ReactElement;
+  /**
+   * Omit to drive the dialog from outside with `open`. A context-menu item
+   * cannot be the trigger: the menu unmounts its items as it closes, which
+   * would take the dialog's trigger — and with it the dialog — down with it.
+   */
+  trigger?: React.ReactElement;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   title: string;
   description: string;
   action: () => Promise<ActionResult | void>;
@@ -39,6 +48,8 @@ export function ConfirmAction({
   return (
     <ConfirmDialog
       trigger={trigger}
+      open={open}
+      onOpenChange={onOpenChange}
       title={title}
       description={description}
       verb={confirmLabel ?? t("delete")}

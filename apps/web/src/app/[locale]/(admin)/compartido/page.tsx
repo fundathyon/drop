@@ -15,6 +15,7 @@ import { requireUser } from "@/lib/session";
 import { api } from "@/lib/api";
 import { AdminLayout } from "@/components/admin-layout";
 import { FinderIcon } from "@/components/finder-icon";
+import { QuickActions } from "@/components/quick-actions";
 import { Link } from "@/i18n/navigation";
 import { formatDate } from "@/lib/format";
 import { sharedNodeHref } from "./link-target";
@@ -41,7 +42,16 @@ export default async function SharedWithMePage() {
           </TableHeader>
           <TableBody>
             {nodes.map((node) => (
-              <TableRow key={node.path} interactive>
+              // No destructive item on purpose: these belong to someone else.
+              // Deleting is not one of the things being shared, whatever the
+              // access level, so the menu stops at open and copy.
+              <QuickActions
+                key={node.path}
+                render={<TableRow interactive />}
+                name={node.name}
+                kind={node.kind === "drop" ? "drop" : "folder"}
+                openHref={sharedNodeHref(node.kind, node.path, node.owner)}
+              >
                 <TableCell>
                   <Link
                     href={sharedNodeHref(node.kind, node.path, node.owner)}
@@ -65,7 +75,7 @@ export default async function SharedWithMePage() {
                   </RoleBadge>
                 </TableCell>
                 <TableCell>{formatDate(node.shared_at)}</TableCell>
-              </TableRow>
+              </QuickActions>
             ))}
           </TableBody>
         </Table>

@@ -1,0 +1,15 @@
+{
+  "quickActions": {
+    "menuAriaLabel": "Quick actions for {name}",
+    "open": "Open",
+    "openInNewTab": "Open in a new tab",
+    "download": "Download",
+    "copyLink": "Copy link",
+    "copyDownloadLink": "Copy download link",
+    "copied": "Link copied",
+    "copyFailed": "Could not copy the link",
+    "deleteFolder": "Delete folder",
+    "deleteDrop": "Delete drop",
+    "deleteFile": "Delete file"
+  }
+}

@@ -14,9 +14,11 @@ import { requireUser } from "@/lib/session";
 import { api } from "@/lib/api";
 import { AdminLayout, type Crumb } from "@/components/admin-layout";
 import { FinderIcon } from "@/components/finder-icon";
+import { QuickActions } from "@/components/quick-actions";
 import { LinkButton } from "@/components/link-button";
 import { Link } from "@/i18n/navigation";
 import { decodePathSegments } from "@/lib/format";
+import { deleteNodeAction } from "./actions";
 import { NewFolderDialog } from "./new-folder-dialog";
 import { NewDropDialog } from "./new-drop-dialog";
 import { DeleteNodeButton } from "./delete-node-button";
@@ -102,7 +104,7 @@ export default async function ExplorerPage({
       ) : mode === "list" ? (
         <ListView nodes={list.children} owner={owner} t={t} />
       ) : (
-        <GridView nodes={list.children} owner={owner} />
+        <GridView nodes={list.children} owner={owner} t={t} />
       )}
     </AdminLayout>
   );
@@ -112,15 +114,26 @@ function nodeTarget(node: Node, owner?: number) {
   return node.kind === "drop" ? `/drop/${node.path}${nodeQuery(owner)}` : nodeHref(node.path, owner);
 }
 
-function ListView({
-  nodes,
-  owner,
-  t,
-}: {
-  nodes: Node[];
-  owner?: number;
-  t: Awaited<ReturnType<typeof getTranslations>>;
-}) {
+/**
+ * The props the right-click menu needs for a node. `deleteNodeAction` is bound
+ * to its arguments HERE, on the server: a Server Action closed over its path is
+ * serializable across the boundary, which is what lets a client component fire
+ * it without the explorer's route-local actions module following it there.
+ */
+function quickActionProps(node: Node, owner: number | undefined, t: Translator) {
+  return {
+    name: node.name,
+    kind: node.kind === "drop" ? ("drop" as const) : ("folder" as const),
+    openHref: nodeTarget(node, owner),
+    deleteAction: deleteNodeAction.bind(null, node.path, owner),
+    deleteTitle: node.kind === "drop" ? t("deleteDropTitle") : t("deleteFolderTitle"),
+    deleteDescription: t("deleteText", { name: node.name }),
+  };
+}
+
+type Translator = Awaited<ReturnType<typeof getTranslations>>;
+
+function ListView({ nodes, owner, t }: { nodes: Node[]; owner?: number; t: Translator }) {
   return (
     <Table>
       <TableHeader>
@@ -132,7 +145,7 @@ function ListView({
       </TableHeader>
       <TableBody>
         {nodes.map((node) => (
-          <TableRow key={node.path} interactive>
+          <QuickActions key={node.path} render={<TableRow interactive />} {...quickActionProps(node, owner, t)}>
             <TableCell>
               <Link href={nodeTarget(node, owner)} className="flex items-center gap-2.5">
                 <FinderIcon kind={node.kind} name={node.name} size={22} />
@@ -147,7 +160,7 @@ function ListView({
             <TableCell align="right">
               <DeleteNodeButton path={node.path} owner={owner} name={node.name} kind={node.kind} />
             </TableCell>
-          </TableRow>
+          </QuickActions>
         ))}
       </TableBody>
     </Table>
@@ -161,11 +174,15 @@ function ListView({
  * to two lines and then ellipsizes rather than truncating a name mid-word on
  * the first line.
  */
-function GridView({ nodes, owner }: { nodes: Node[]; owner?: number }) {
+function GridView({ nodes, owner, t }: { nodes: Node[]; owner?: number; t: Translator }) {
   return (
     <ul className="grid grid-cols-[repeat(auto-fill,minmax(108px,1fr))] gap-1">
       {nodes.map((node) => (
-        <li key={node.path} className="group relative">
+        <QuickActions
+          key={node.path}
+          render={<li className="group relative" />}
+          {...quickActionProps(node, owner, t)}
+        >
           <Link
             href={nodeTarget(node, owner)}
             className="hover:bg-surface-hover focus-visible:ring-focus flex flex-col items-center gap-1.5 rounded-lg px-2 py-3 outline-none focus-visible:ring-2"
@@ -181,7 +198,7 @@ function GridView({ nodes, owner }: { nodes: Node[]; owner?: number }) {
           <div className="absolute top-1 right-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
             <DeleteNodeButton path={node.path} owner={owner} name={node.name} kind={node.kind} />
           </div>
-        </li>
+        </QuickActions>
       ))}
     </ul>
   );
