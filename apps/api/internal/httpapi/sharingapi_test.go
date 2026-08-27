@@ -272,3 +272,74 @@ func TestListSharedWithMeIsOneDirectional(t *testing.T) {
 		t.Fatalf("sharing is one-directional: the owner must not see their own grant, got %+v", shared.Nodes)
 	}
 }
+
+// TestSharedFolderListingCarriesAccessAndLaterChildren walks the whole flow the
+// admin now depends on: share a folder, and from the grantee's side list it
+// over HTTP. The listing has to report the children — including ones created
+// after the grant — and the grantee's level on the folder itself, which is what
+// the explorer uses to decide whether to offer its add and share actions.
+func TestSharedFolderListingCarriesAccessAndLaterChildren(t *testing.T) {
+	f := newSharingFixture(t)
+	ctx := context.Background()
+	owner := strconv.Itoa(int(f.ownerID))
+
+	if _, err := f.tree.CreateFolder(ctx, f.ownerID, service.Own(""), "equipo"); err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+
+	// The owner's own listing already reports ownership, without a grant to
+	// look up — and a drive's root does too.
+	rec := doJSON(t, f.router, http.MethodGet, "/v1/nodes?path=equipo", f.ownerToken, nil)
+	var mine ListResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &mine); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if mine.Access != service.AccessOwner {
+		t.Fatalf("expected owner on his own folder, got %q", mine.Access)
+	}
+
+	rec = doJSON(t, f.router, http.MethodPost, "/v1/shares?path=equipo", f.ownerToken,
+		ShareRequest{UserID: f.otherID, Access: model.AccessEditor})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /v1/shares: expected 200, got %d (%s)", rec.Code, rec.Body)
+	}
+
+	// Created after the grant, and never shared in its own right.
+	if _, err := f.tree.CreateFolder(ctx, f.ownerID, service.Own("equipo"), "disenio"); err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+
+	rec = doJSON(t, f.router, http.MethodGet, "/v1/nodes?path=equipo&owner="+owner, f.otherToken, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /v1/nodes: expected 200, got %d (%s)", rec.Code, rec.Body)
+	}
+	var listed ListResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(listed.Children) != 1 || listed.Children[0].Name != "disenio" {
+		t.Fatalf("expected the later folder in the listing, got %+v", listed.Children)
+	}
+	if listed.Access != service.AccessEditor {
+		t.Fatalf("expected editor on the shared folder, got %q", listed.Access)
+	}
+
+	// One level down, still without a grant of its own.
+	rec = doJSON(t, f.router, http.MethodGet, "/v1/nodes?path=equipo/disenio&owner="+owner, f.otherToken, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /v1/nodes (nested): expected 200, got %d (%s)", rec.Code, rec.Body)
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if listed.Access != service.AccessEditor {
+		t.Fatalf("expected editor one level down, got %q", listed.Access)
+	}
+
+	// And the editor can hand the folder on, which is what the explorer's
+	// share dialog does with the same level.
+	rec = doJSON(t, f.router, http.MethodGet, "/v1/shares?path=equipo&owner="+owner, f.otherToken, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("an editor should see who has access, got %d (%s)", rec.Code, rec.Body)
+	}
+}

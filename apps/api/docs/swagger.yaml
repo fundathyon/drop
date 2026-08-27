@@ -451,6 +451,18 @@ definitions:
     type: object
   internal_httpapi.ListResponse:
     properties:
+      access:
+        allOf:
+        - $ref: '#/definitions/drop_internal_service.Access'
+        description: |-
+          Access is what the caller may do with the listed folder itself — which
+          is what decides whether the admin offers to add to it or share it. A
+          drive's own root always reports owner.
+        enum:
+        - owner
+        - editor
+        - viewer
+        example: owner
       children:
         items:
           $ref: '#/definitions/drop_internal_service.Node'

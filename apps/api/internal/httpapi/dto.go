@@ -23,6 +23,10 @@ type HealthResponse struct {
 type ListResponse struct {
 	Path     string         `json:"path" example:"proyectos"`
 	Children []service.Node `json:"children"`
+	// Access is what the caller may do with the listed folder itself — which
+	// is what decides whether the admin offers to add to it or share it. A
+	// drive's own root always reports owner.
+	Access service.Access `json:"access" enums:"owner,editor,viewer" example:"owner"`
 }
 
 // UploadResponse reports the files stored by an upload.

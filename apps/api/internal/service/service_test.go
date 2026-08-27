@@ -118,7 +118,7 @@ func TestCreateFolderAndDrop(t *testing.T) {
 		t.Fatalf("CreateFolder: %v", err)
 	}
 
-	nodes, err := svc.List(ctx, testUser, Own(""))
+	nodes, _, err := svc.List(ctx, testUser, Own(""))
 	if err != nil {
 		t.Fatalf("List root: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestCreateFolderAndDrop(t *testing.T) {
 		t.Fatalf("expected default entrypoint, got %q", drop.Meta.Entrypoint)
 	}
 
-	children, err := svc.List(ctx, testUser, Own("proyectos"))
+	children, _, err := svc.List(ctx, testUser, Own("proyectos"))
 	if err != nil {
 		t.Fatalf("List proyectos: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestCreateFolderAndDrop(t *testing.T) {
 	}
 
 	// Listing a drop is a category error: it holds files, not child nodes.
-	if _, err := svc.List(ctx, testUser, Own("proyectos/arquitectura")); err != ErrIsDrop {
+	if _, _, err := svc.List(ctx, testUser, Own("proyectos/arquitectura")); err != ErrIsDrop {
 		t.Fatalf("expected ErrIsDrop, got %v", err)
 	}
 
@@ -870,7 +870,7 @@ func TestUploadDropValidation(t *testing.T) {
 	}
 
 	// None of the rejected requests may have left a node behind.
-	nodes, err := svc.List(ctx, testUser, Own(""))
+	nodes, _, err := svc.List(ctx, testUser, Own(""))
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -897,7 +897,7 @@ func TestUploadDropRollsBackOnStorageFailure(t *testing.T) {
 		t.Fatal("expected the upload to fail")
 	}
 
-	nodes, err := svc.List(ctx, testUser, Own(""))
+	nodes, _, err := svc.List(ctx, testUser, Own(""))
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -1090,7 +1090,7 @@ func TestDeleteRecursiveRemovesObjects(t *testing.T) {
 		t.Fatalf("Delete: %v", err)
 	}
 
-	nodes, err := svc.List(ctx, testUser, Own(""))
+	nodes, _, err := svc.List(ctx, testUser, Own(""))
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}

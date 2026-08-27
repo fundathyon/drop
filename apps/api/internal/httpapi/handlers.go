@@ -56,12 +56,12 @@ func (h *handler) health(c *gin.Context) {
 //	@Router			/v1/nodes [get]
 func (h *handler) listNodes(c *gin.Context) {
 	path := c.Query("path")
-	nodes, err := h.svc.List(c.Request.Context(), actorOf(c), apiRef(c, path))
+	nodes, level, err := h.svc.List(c.Request.Context(), actorOf(c), apiRef(c, path))
 	if err != nil {
 		abortWithServiceError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, ListResponse{Path: path, Children: nodes})
+	c.JSON(http.StatusOK, ListResponse{Path: path, Children: nodes, Access: level})
 }
 
 // CreateFolder godoc

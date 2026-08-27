@@ -52,7 +52,7 @@ func TestADriveIsInvisibleToEveryoneElse(t *testing.T) {
 	drop := aliceDrop(t, svc, "privado")
 
 	// Bob's own root is empty even though Alice has drops.
-	roots, err := svc.List(ctx, bob, Own(""))
+	roots, _, err := svc.List(ctx, bob, Own(""))
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestADriveIsInvisibleToEveryoneElse(t *testing.T) {
 	if _, err := svc.GetDrop(ctx, bob, In(alice, drop.Path)); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected not found in alice's drive, got %v", err)
 	}
-	if _, err := svc.List(ctx, bob, In(alice, "")); !errors.Is(err, ErrNotFound) {
+	if _, _, err := svc.List(ctx, bob, In(alice, "")); !errors.Is(err, ErrNotFound) {
 		t.Fatal("bob must not be able to enumerate alice's root")
 	}
 	if err := svc.Delete(ctx, bob, In(alice, drop.Path)); !errors.Is(err, ErrNotFound) {
@@ -170,12 +170,17 @@ func TestSharingAFolderReachesWhatIsInside(t *testing.T) {
 		t.Fatalf("Share: %v", err)
 	}
 
-	children, err := svc.List(ctx, bob, In(alice, "Equipo"))
+	children, level, err := svc.List(ctx, bob, In(alice, "Equipo"))
 	if err != nil {
 		t.Fatalf("bob should be able to list the shared folder: %v", err)
 	}
 	if len(children) != 1 {
 		t.Fatalf("expected the drop inside, got %d children", len(children))
+	}
+	// Listing reports his level on the folder itself, which is what tells the
+	// admin he may add to it and pass it on rather than only read it.
+	if level != AccessEditor {
+		t.Fatalf("expected the listing to report editor, got %q", level)
 	}
 	got, err := svc.GetDrop(ctx, bob, In(alice, drop.Path))
 	if err != nil {
@@ -188,6 +193,66 @@ func TestSharingAFolderReachesWhatIsInside(t *testing.T) {
 	// root itself is protected.
 	if err := svc.Delete(ctx, bob, In(alice, drop.Path)); err != nil {
 		t.Fatalf("an editor should be able to delete inside: %v", err)
+	}
+}
+
+// TestASharedFolderCoversWhatIsCreatedAfterwards is the half of folder sharing
+// that expanding a grant over the subtree would not give: access is resolved
+// against the path on every read, so whatever appears inside a shared folder
+// later is reachable the moment it exists, with no second grant to make.
+func TestASharedFolderCoversWhatIsCreatedAfterwards(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTestService(t)
+	seedUsers(t, svc)
+
+	if _, err := svc.CreateFolder(ctx, alice, Own(""), "Equipo"); err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+	if _, err := svc.Share(ctx, alice, Own("Equipo"), bob, AccessEditor); err != nil {
+		t.Fatalf("Share: %v", err)
+	}
+
+	// Everything below is created *after* the grant.
+	if _, err := svc.CreateFolder(ctx, alice, Own("Equipo"), "Diseño"); err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+	later, err := svc.UploadDrop(ctx, alice, UploadDropInput{
+		ParentRef: Own("Equipo/Diseño"),
+		Title:     "tarde",
+		Name:      "tarde",
+		Files:     []UploadFile{uploadFile("index.html", "text/html", "<h1>x</h1>")},
+	})
+	if err != nil {
+		t.Fatalf("UploadDrop: %v", err)
+	}
+
+	// Depth is not a limit: the grant is a prefix test, not a single level.
+	got, err := svc.GetDrop(ctx, bob, In(alice, later.Path))
+	if err != nil {
+		t.Fatalf("a drop created after the grant should be reachable: %v", err)
+	}
+	if got.Access != AccessEditor {
+		t.Fatalf("expected editor two levels down, got %q", got.Access)
+	}
+
+	// And what the editor adds himself lands in the owner's drive under the
+	// same grant, rather than in a copy of the folder in his own.
+	mine, err := svc.CreateFolder(ctx, bob, In(alice, "Equipo/Diseño"), "De Bob")
+	if err != nil {
+		t.Fatalf("an editor should be able to create inside: %v", err)
+	}
+	if mine.Owner != alice {
+		t.Fatalf("expected the new folder in alice's drive, got owner %d", mine.Owner)
+	}
+	if _, _, err := svc.List(ctx, bob, In(alice, mine.Path)); err != nil {
+		t.Fatalf("bob should be able to list what he just created: %v", err)
+	}
+
+	// Sharing a folder shares that folder: a drop added elsewhere in the drive
+	// stays invisible, which is what makes the grant safe to hand out.
+	outside := aliceDrop(t, svc, "fuera")
+	if _, err := svc.GetDrop(ctx, bob, In(alice, outside.Path)); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a sibling of the shared folder must stay invisible, got %v", err)
 	}
 }
 

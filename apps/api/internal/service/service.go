@@ -337,40 +337,50 @@ func (s *Service) nodeByPath(ctx context.Context, owner uint, path string) (*mod
 // List returns the folders and drops directly under a reference. An empty path
 // is the root of a drive, which only its owner may list: someone who was given
 // one folder has no business enumerating the rest.
-func (s *Service) List(ctx context.Context, actor uint, ref Ref) ([]Node, error) {
+//
+// The level returned is the caller's access to the listed folder itself, not to
+// its children — every child inherits it anyway. It is what tells the admin
+// whether this folder may be added to or shared, which a listing of names alone
+// cannot say.
+func (s *Service) List(ctx context.Context, actor uint, ref Ref) ([]Node, Access, error) {
 	path, err := cleanPath(ref.Path)
 	if err != nil {
-		return nil, err
+		return nil, AccessNone, err
 	}
 	drive := ref.drive(actor)
+
+	// A drive's root is not a node, so there is no grant to look up: reaching
+	// it at all already means it is the caller's own.
+	level := AccessOwner
 
 	query := s.db.WithContext(ctx).Model(&model.Node{}).Where("owner_id = ?", drive)
 	if path == "" {
 		if drive != actor {
-			return nil, ErrNotFound
+			return nil, AccessNone, ErrNotFound
 		}
 		query = query.Where("parent_id IS NULL")
 	} else {
-		parent, _, err := s.readable(ctx, actor, ref)
+		parent, parentLevel, err := s.readable(ctx, actor, ref)
 		if err != nil {
-			return nil, err
+			return nil, AccessNone, err
 		}
 		if parent.Kind == model.KindDrop {
-			return nil, ErrIsDrop
+			return nil, AccessNone, ErrIsDrop
 		}
+		level = parentLevel
 		query = query.Where("parent_id = ?", parent.ID)
 	}
 
 	var rows []model.Node
 	if err := query.Order("name").Find(&rows).Error; err != nil {
-		return nil, err
+		return nil, AccessNone, err
 	}
 
 	nodes := make([]Node, 0, len(rows))
 	for _, r := range rows {
 		nodes = append(nodes, Node{Name: r.Name, Path: r.Path, Kind: r.Kind, Owner: r.OwnerID})
 	}
-	return nodes, nil
+	return nodes, level, nil
 }
 
 // GetDrop returns a drop's metadata, the files of its current version, and its

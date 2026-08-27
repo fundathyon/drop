@@ -2178,6 +2178,20 @@ const docTemplate = `{
         "internal_httpapi.ListResponse": {
             "type": "object",
             "properties": {
+                "access": {
+                    "description": "Access is what the caller may do with the listed folder itself — which\nis what decides whether the admin offers to add to it or share it. A\ndrive's own root always reports owner.",
+                    "enum": [
+                        "owner",
+                        "editor",
+                        "viewer"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/drop_internal_service.Access"
+                        }
+                    ],
+                    "example": "owner"
+                },
                 "children": {
                     "type": "array",
                     "items": {
