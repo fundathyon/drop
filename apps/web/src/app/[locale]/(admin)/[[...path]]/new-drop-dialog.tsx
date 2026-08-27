@@ -16,7 +16,6 @@ import {
   FormField,
   Input,
   Select,
-  SelectItem,
 } from "@foundathyon/community-ui";
 import { useCloseOnSuccess } from "@/hooks/use-close-on-success";
 import { createDropAction } from "./actions";
@@ -63,11 +62,15 @@ export function NewDropDialog({ parent, owner }: { parent: string; owner?: numbe
               <Input id="new-drop-title" name="title" placeholder={t("newDropDialog.titlePlaceholder")} />
             </FormField>
             <FormField label={t("newDropDialog.visibilityLabel")}>
-              <Select name="visibility" defaultValue="public">
-                <SelectItem value="private">{t("newDropDialog.visibilityPrivate")}</SelectItem>
-                <SelectItem value="unlisted">{t("newDropDialog.visibilityUnlisted")}</SelectItem>
-                <SelectItem value="public">{t("newDropDialog.visibilityPublic")}</SelectItem>
-              </Select>
+              <Select
+                name="visibility"
+                defaultValue="public"
+                items={[
+                  { value: "private", label: t("newDropDialog.visibilityPrivate") },
+                  { value: "unlisted", label: t("newDropDialog.visibilityUnlisted") },
+                  { value: "public", label: t("newDropDialog.visibilityPublic") },
+                ]}
+              />
             </FormField>
             <FormField label={t("newDropDialog.entrypointLabel")}>
               <Input

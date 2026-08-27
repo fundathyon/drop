@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Alert, Button, FormField, Select, SelectItem, Separator } from "@foundathyon/community-ui";
+import { Alert, Button, FormField, Select, Separator } from "@foundathyon/community-ui";
 import { shareAction, type ShareState } from "@/lib/actions/sharing";
 import type { UserInfo } from "@/lib/types";
 
@@ -55,10 +55,17 @@ export function AddShareForm({
           />
         </FormField>
         <FormField label={t("accessLabel")}>
-          <Select name="access" defaultValue="viewer">
-            <SelectItem value="viewer">{t("accessViewerOption")}</SelectItem>
-            <SelectItem value="editor">{t("accessEditorOption")}</SelectItem>
-          </Select>
+          {/* `items`, not SelectItem children: community-ui only hands Base UI
+              a value->label map through this prop, and without it the trigger
+              renders the raw value ("viewer") instead of the option's text. */}
+          <Select
+            name="access"
+            defaultValue="viewer"
+            items={[
+              { value: "viewer", label: t("accessViewerOption") },
+              { value: "editor", label: t("accessEditorOption") },
+            ]}
+          />
         </FormField>
       </div>
       {state?.error && <Alert tone="danger" title={t(`error.${state.error}`)} />}

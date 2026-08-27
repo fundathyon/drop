@@ -18,7 +18,6 @@ import {
   FormField,
   Input,
   Select,
-  SelectItem,
   Separator,
 } from "@foundathyon/community-ui";
 import { useCloseOnSuccess } from "@/hooks/use-close-on-success";
@@ -73,11 +72,16 @@ export function EditMetaDialog({
               <Input id="edit-meta-title" name="title" defaultValue={meta.title} autoFocus />
             </FormField>
             <FormField label={t("editMeta.visibilityLabel")}>
-              <Select name="visibility" value={visibility} onValueChange={setVisibility}>
-                <SelectItem value="private">{t("editMeta.visibilityPrivate")}</SelectItem>
-                <SelectItem value="unlisted">{t("editMeta.visibilityUnlisted")}</SelectItem>
-                <SelectItem value="public">{t("editMeta.visibilityPublic")}</SelectItem>
-              </Select>
+              <Select
+                name="visibility"
+                value={visibility}
+                onValueChange={setVisibility}
+                items={[
+                  { value: "private", label: t("editMeta.visibilityPrivate") },
+                  { value: "unlisted", label: t("editMeta.visibilityUnlisted") },
+                  { value: "public", label: t("editMeta.visibilityPublic") },
+                ]}
+              />
             </FormField>
             <FormField label={t("editMeta.entrypointLabel")}>
               <Input id="edit-meta-entrypoint" name="entrypoint" defaultValue={meta.entrypoint} />

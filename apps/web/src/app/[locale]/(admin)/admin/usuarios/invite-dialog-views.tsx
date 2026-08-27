@@ -20,7 +20,6 @@ import {
   FormField,
   Input,
   Select,
-  SelectItem,
 } from "@foundathyon/community-ui";
 import type { InvitationActionState } from "./actions";
 
@@ -61,10 +60,14 @@ export function InviteForm({
           />
         </FormField>
         <FormField label={t("inviteDialog.roleLabel")}>
-          <Select name="role" defaultValue="user">
-            <SelectItem value="user">{t("inviteDialog.roleUser")}</SelectItem>
-            <SelectItem value="admin">{t("inviteDialog.roleAdmin")}</SelectItem>
-          </Select>
+          <Select
+            name="role"
+            defaultValue="user"
+            items={[
+              { value: "user", label: t("inviteDialog.roleUser") },
+              { value: "admin", label: t("inviteDialog.roleAdmin") },
+            ]}
+          />
         </FormField>
       </div>
       <DialogFooter>
