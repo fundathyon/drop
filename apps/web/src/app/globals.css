@@ -644,3 +644,29 @@
     bottom: 0;
   }
 }
+
+/* ---------------------------------------------------------------------- */
+/* Dropdowns opened from inside a modal                                   */
+/*                                                                        */
+/* community-ui v0.2.0 puts every Base UI Positioner (Select, Combobox,   */
+/* Menu…) on `.fdn-z-dropdown` — z-index 30 — and every Dialog surface on */
+/* `.fdn-z-modal` — z-index 50. Both are portaled to <body>, so they are  */
+/* siblings in the SAME stacking context and the numbers decide it: a     */
+/* Select opened inside a Dialog paints underneath the dialog.            */
+/*                                                                        */
+/* It does not read as a layering bug, it reads as a dead control. The    */
+/* popup does open — `aria-expanded` flips, the listbox mounts — but the  */
+/* backdrop covers it, so the click meant for an option lands on the      */
+/* dialog instead and Base UI closes the popup as a click outside. The    */
+/* select appears to simply not respond.                                   */
+/*                                                                        */
+/* Raising it only WHILE a modal is on screen keeps the design system's   */
+/* normal order everywhere else. Scoping it that way is safe because a    */
+/* modal makes the rest of the page inert: any dropdown open at the same  */
+/* time as a dialog is, by construction, a dropdown inside that dialog.   */
+/*                                                                        */
+/* Delete once community-ui layers popups above modals itself.            */
+/* ---------------------------------------------------------------------- */
+body:has([role="dialog"].fdn-z-modal, [role="alertdialog"].fdn-z-modal) .fdn-z-dropdown {
+  z-index: calc(var(--fdn-z-modal) + 1);
+}
