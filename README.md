@@ -45,6 +45,12 @@ por el icono, no por una etiqueta: un drop lleva el cubo encima de la carpeta
 porque es una carpeta que además está publicada. El sidebar se colapsa a 48px
 con ⌘B y la elección se recuerda entre visitas.
 
+Dentro de una carpeta la barra ofrece **Compartir**, el mismo diálogo que el
+detalle de un drop: lo que se comparte es la carpeta entera. La raíz de la
+unidad no lo lleva porque no es un nodo — no hay nada a lo que dar acceso. En
+una carpeta que te han compartido como lector la barra se queda sin las
+acciones de crear y borrar, que la API rechazaría.
+
 ### Acciones rápidas
 
 Click derecho sobre un archivo, una carpeta o un drop. Todo lo que hay en el
@@ -192,8 +198,9 @@ Una carpeta o un drop se puede **compartir** con otra cuenta, en dos niveles:
 | **lector** | abrir y descargar |
 | **editor** | además subir, editar y borrar dentro |
 
-- El permiso se aplica a **todo lo que cuelga** de lo compartido, así que
-  compartir una carpeta comparte los drops que contiene.
+- El permiso se aplica a **todo lo que cuelga** de lo compartido y se resuelve
+  en cada lectura, no se copia sobre el subárbol: compartir una carpeta alcanza
+  lo que hay dentro **y lo que se cree después**, sin volver a compartir nada.
 - Comparten el dueño **y los editores**, para que un equipo no dependa de una
   sola persona. Un editor solo puede revocar lo que él mismo concedió.
 - Un editor **no puede borrar la raíz compartida**: es lo único que podría
