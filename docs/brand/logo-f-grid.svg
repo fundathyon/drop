@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 343 224" role="img" aria-label="Matriz de seis marcas F en distintos colores">
+  <g transform="translate(0 0)" fill="#3CE29A">
+    <rect width="85" height="22" rx="7"/>
+    <rect y="33" width="61" height="22" rx="7"/>
+    <rect y="66" width="25" height="22" rx="7"/>
+  </g>
+  <g transform="translate(129 0)" fill="#22D3B0">
+    <rect width="85" height="22" rx="7"/>
+    <rect y="33" width="61" height="22" rx="7"/>
+    <rect y="66" width="25" height="22" rx="7"/>
+  </g>
+  <g transform="translate(258 0)" fill="#14BFD1">
+    <rect width="85" height="22" rx="7"/>
+    <rect y="33" width="61" height="22" rx="7"/>
+    <rect y="66" width="25" height="22" rx="7"/>
+  </g>
+  <g transform="translate(0 136)" fill="#3D5AFE">
+    <rect width="85" height="22" rx="7"/>
+    <rect y="33" width="61" height="22" rx="7"/>
+    <rect y="66" width="25" height="22" rx="7"/>
+  </g>
+  <g transform="translate(129 136)" fill="#6C46E5">
+    <rect width="85" height="22" rx="7"/>
+    <rect y="33" width="61" height="22" rx="7"/>
+    <rect y="66" width="25" height="22" rx="7"/>
+  </g>
+  <g transform="translate(258 136)" fill="#A233D6">
+    <rect width="85" height="22" rx="7"/>
+    <rect y="33" width="61" height="22" rx="7"/>
+    <rect y="66" width="25" height="22" rx="7"/>
+  </g>
+</svg>
