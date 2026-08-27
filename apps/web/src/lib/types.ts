@@ -85,6 +85,8 @@ export interface TokenResponse {
 export interface ListResponse {
   path: string;
   children: Node[];
+  /** What the caller may do with the listed folder itself; a drive root is "owner". */
+  access: EffectiveAccess;
 }
 
 export interface UploadResponse {

@@ -1,0 +1,23 @@
+{
+  "sharing": {
+    "trigger": "Compartir",
+    "title": "Compartir “{name}”",
+    "descriptionDrop": "Quien reciba el acceso lo verá en su sección <b>Compartido conmigo</b>. Compartir un drop no cambia su visibilidad pública.",
+    "descriptionFolder": "Quien reciba el acceso lo verá en su sección <b>Compartido conmigo</b>, y alcanza <b>todo lo que hay dentro</b>, incluido lo que se cree más adelante.",
+    "empty": "Todavía no lo has compartido con nadie.",
+    "accessEditor": "editor",
+    "accessViewer": "lector",
+    "removeAriaLabel": "Quitar acceso a {email}",
+    "personLabel": "Persona",
+    "personPlaceholder": "Elige una cuenta…",
+    "accessLabel": "Acceso",
+    "accessViewerOption": "lector — abrir y descargar",
+    "accessEditorOption": "editor — además subir, editar y borrar dentro",
+    "submit": "Compartir",
+    "sharing": "Compartiendo…",
+    "error": {
+      "userRequired": "Elige una cuenta para compartir.",
+      "unexpected": "Error inesperado"
+    }
+  }
+}

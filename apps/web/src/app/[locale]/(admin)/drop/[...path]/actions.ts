@@ -6,7 +6,7 @@ import { redirect } from "@/i18n/navigation";
 import { api, ApiError } from "@/lib/api";
 import { requireUser } from "@/lib/session";
 import { parentOf } from "@/lib/format";
-import type { ShareAccess, Visibility } from "@/lib/types";
+import type { Visibility } from "@/lib/types";
 
 // Toast-style actions (bound into a ConfirmAction or a plain button in a
 // small client component): on failure they surface the API's own message
@@ -62,21 +62,7 @@ export async function activateVersionAction(
   revalidatePath("/", "layout");
 }
 
-export async function unshareAction(
-  path: string,
-  userId: number,
-  owner: number | undefined
-): Promise<ActionState | void> {
-  await requireUser();
-  try {
-    await api.unshareNode(path, userId, owner);
-  } catch (err) {
-    return { error: err instanceof ApiError ? err.message : "unexpected" };
-  }
-  revalidatePath("/", "layout");
-}
-
-// useActionState-driven dialogs (edit-meta, upload, share): these return a
+// useActionState-driven dialogs (edit-meta, upload): these return a
 // fixed, small set of known error keys that the dialog translates itself
 // (`t(\`namespace.error.${error}\`)`), the same convention createInvitationAction
 // uses next door in admin/usuarios/actions.ts — never the raw API message,
@@ -123,31 +109,6 @@ export async function uploadFilesAction(
 
   try {
     await api.uploadFiles(path, upload, owner);
-  } catch {
-    return { error: "unexpected" };
-  }
-  revalidatePath("/", "layout");
-  return {};
-}
-
-export interface ShareState {
-  error?: "userRequired" | "unexpected";
-}
-
-export async function shareAction(
-  path: string,
-  formData: FormData,
-  owner: number | undefined
-): Promise<ShareState> {
-  await requireUser();
-  const userId = Number(formData.get("user_id"));
-  if (!userId || !Number.isFinite(userId) || userId <= 0) {
-    return { error: "userRequired" };
-  }
-  const access = (String(formData.get("access") ?? "viewer") || "viewer") as ShareAccess;
-
-  try {
-    await api.shareNode(path, userId, access, owner);
   } catch {
     return { error: "unexpected" };
   }

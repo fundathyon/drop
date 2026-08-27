@@ -69,26 +69,6 @@
         "noFile": "Selecciona al menos un archivo.",
         "unexpected": "Error inesperado"
       }
-    },
-    "share": {
-      "trigger": "Compartir",
-      "title": "Compartir \"{title}\"",
-      "description": "Quien reciba el acceso lo verá en su sección <b>Compartido conmigo</b>. Compartir un drop no cambia su visibilidad pública.",
-      "empty": "Todavía no lo has compartido con nadie.",
-      "accessEditor": "editor",
-      "accessViewer": "lector",
-      "removeAriaLabel": "Quitar acceso a {email}",
-      "personLabel": "Persona",
-      "personPlaceholder": "Elige una cuenta…",
-      "accessLabel": "Acceso",
-      "accessViewerOption": "lector — abrir y descargar",
-      "accessEditorOption": "editor — además subir, editar y borrar dentro",
-      "submit": "Compartir",
-      "sharing": "Compartiendo…",
-      "error": {
-        "userRequired": "Elige una cuenta para compartir.",
-        "unexpected": "Error inesperado"
-      }
     }
   }
 }

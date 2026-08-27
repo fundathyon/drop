@@ -28,7 +28,7 @@ import { DeleteFileButton } from "./delete-file-button";
 import { RestoreVersionButton } from "./restore-version-button";
 import { EditMetaDialog } from "./edit-meta-dialog";
 import { UploadDialog } from "./upload-dialog";
-import { ShareDialog } from "./share-dialog";
+import { ShareDialog } from "@/components/share-dialog";
 
 function ownerQuery(owner?: number) {
   return owner ? `?owner=${owner}` : "";
@@ -79,7 +79,8 @@ export default async function DropPage({
         <ShareDialog
           path={path}
           owner={owner}
-          title={detail.meta.title}
+          name={detail.meta.title}
+          kind="drop"
           shares={shareData.shares}
           candidates={shareData.candidates}
         />

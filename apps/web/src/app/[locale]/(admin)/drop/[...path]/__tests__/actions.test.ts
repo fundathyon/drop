@@ -25,13 +25,11 @@ class FakeApiError extends Error {
 const deleteNode = mock(async () => undefined);
 const deleteFile = mock(async () => undefined);
 const activateDropVersion = mock(async () => ({}));
-const unshareNode = mock(async () => undefined);
 const patchDrop = mock(async () => ({}));
 const uploadFiles = mock(async () => ({ files: [] }));
-const shareNode = mock(async () => ({}));
 
 mock.module("@/lib/api", () => ({
-  api: { deleteNode, deleteFile, activateDropVersion, unshareNode, patchDrop, uploadFiles, shareNode },
+  api: { deleteNode, deleteFile, activateDropVersion, patchDrop, uploadFiles },
   ApiError: FakeApiError,
 }));
 
@@ -50,20 +48,16 @@ const {
   deleteDropAction,
   deleteFileAction,
   activateVersionAction,
-  unshareAction,
   patchDropAction,
   uploadFilesAction,
-  shareAction,
 } = await import("../actions");
 
 beforeEach(() => {
   deleteNode.mockClear();
   deleteFile.mockClear();
   activateDropVersion.mockClear();
-  unshareNode.mockClear();
   patchDrop.mockClear();
   uploadFiles.mockClear();
-  shareNode.mockClear();
 });
 
 describe("deleteDropAction", () => {
@@ -130,22 +124,6 @@ describe("activateVersionAction", () => {
     });
     const result = await activateVersionAction("proyectos/site", 3, undefined);
     expect(result?.error).toBe("version no longer exists");
-  });
-});
-
-describe("unshareAction", () => {
-  test("unshares and reports no error", async () => {
-    const result = await unshareAction("proyectos/site", 9, undefined);
-    expect(result?.error).toBeUndefined();
-    expect(unshareNode).toHaveBeenCalledWith("proyectos/site", 9, undefined);
-  });
-
-  test("surfaces the API's message on failure", async () => {
-    unshareNode.mockImplementationOnce(async () => {
-      throw new FakeApiError(404, "not_found", "share not found");
-    });
-    const result = await unshareAction("proyectos/site", 9, undefined);
-    expect(result?.error).toBe("share not found");
   });
 });
 
@@ -221,49 +199,6 @@ describe("uploadFilesAction", () => {
     const form = new FormData();
     form.set("file", new File(["a"], "a.txt"));
     const result = await uploadFilesAction("proyectos/site", form, undefined);
-    expect(result.error).toBe("unexpected");
-  });
-});
-
-describe("shareAction", () => {
-  test("rejects a missing user_id without calling the API", async () => {
-    const form = new FormData();
-    const result = await shareAction("proyectos/site", form, undefined);
-    expect(result.error).toBe("userRequired");
-    expect(shareNode).not.toHaveBeenCalled();
-  });
-
-  test("rejects a non-numeric user_id", async () => {
-    const form = new FormData();
-    form.set("user_id", "not-a-number");
-    const result = await shareAction("proyectos/site", form, undefined);
-    expect(result.error).toBe("userRequired");
-    expect(shareNode).not.toHaveBeenCalled();
-  });
-
-  test("defaults access to viewer when absent", async () => {
-    const form = new FormData();
-    form.set("user_id", "3");
-    const result = await shareAction("proyectos/site", form, undefined);
-    expect(result.error).toBeUndefined();
-    expect(shareNode).toHaveBeenCalledWith("proyectos/site", 3, "viewer", undefined);
-  });
-
-  test("passes the chosen access through", async () => {
-    const form = new FormData();
-    form.set("user_id", "3");
-    form.set("access", "editor");
-    await shareAction("proyectos/site", form, 7);
-    expect(shareNode).toHaveBeenCalledWith("proyectos/site", 3, "editor", 7);
-  });
-
-  test("maps any API failure to a generic unexpected key", async () => {
-    shareNode.mockImplementationOnce(async () => {
-      throw new FakeApiError(409, "already_shared", "already shared with this user");
-    });
-    const form = new FormData();
-    form.set("user_id", "3");
-    const result = await shareAction("proyectos/site", form, undefined);
     expect(result.error).toBe("unexpected");
   });
 });

@@ -1,0 +1,23 @@
+{
+  "sharing": {
+    "trigger": "Share",
+    "title": "Share “{name}”",
+    "descriptionDrop": "Whoever gets access will see it in their <b>Shared with me</b> section. Sharing a drop doesn't change its public visibility.",
+    "descriptionFolder": "Whoever gets access will see it in their <b>Shared with me</b> section, and it reaches <b>everything inside</b>, including whatever is created later.",
+    "empty": "You haven't shared this with anyone yet.",
+    "accessEditor": "editor",
+    "accessViewer": "viewer",
+    "removeAriaLabel": "Remove access for {email}",
+    "personLabel": "Person",
+    "personPlaceholder": "Choose an account…",
+    "accessLabel": "Access",
+    "accessViewerOption": "viewer — open and download",
+    "accessEditorOption": "editor — also upload, edit and delete inside",
+    "submit": "Share",
+    "sharing": "Sharing…",
+    "error": {
+      "userRequired": "Choose an account to share with.",
+      "unexpected": "Unexpected error"
+    }
+  }
+}

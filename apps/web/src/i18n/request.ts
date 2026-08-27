@@ -4,7 +4,7 @@ import { routing } from "./routing";
 
 // Each namespace lives in its own file so independent pages/features never
 // touch the same file — see messages/<locale>/*.json.
-const namespaces = ["common", "nav", "auth", "explorer", "drop", "editor", "shared", "users", "quick-actions"];
+const namespaces = ["common", "nav", "auth", "explorer", "drop", "editor", "shared", "sharing", "users", "quick-actions"];
 
 export default getRequestConfig(async ({ requestLocale }) => {
   const requested = await requestLocale;
